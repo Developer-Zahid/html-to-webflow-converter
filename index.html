@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTML to Webflow Converter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0d1117; 
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #30363d; 
+      border-radius: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #4b5563; 
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-900 text-slate-200 font-sans p-6">
+  <div class="max-w-7xl mx-auto">
+    
+    <!-- Header -->
+    <header class="mb-8 flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold text-white flex items-center gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          HTML to Webflow Engine
+        </h1>
+        <p class="text-slate-400 mt-2">
+          Translates raw HTML and inline CSS into Webflow's internal Node structure. (Vanilla JS Version)
+        </p>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[75vh]">
+      
+      <!-- Left Column: HTML Input -->
+      <div class="flex flex-col border border-slate-700 rounded-xl overflow-hidden bg-slate-800 shadow-xl">
+        <div class="bg-slate-950 px-4 py-3 flex items-center border-b border-slate-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400 mr-2"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
+          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Source HTML</h2>
+        </div>
+        <textarea id="html-input" class="flex-1 w-full bg-slate-800 text-slate-300 p-4 font-mono text-sm focus:outline-none resize-none focus:ring-2 ring-inset ring-blue-500/50 leading-relaxed custom-scrollbar" placeholder="Paste your HTML here..." spellcheck="false"></textarea>
+      </div>
+
+      <!-- Right Column: JSON Output -->
+      <div class="flex flex-col border border-slate-700 rounded-xl overflow-hidden bg-[#0d1117] shadow-xl relative">
+        <div class="bg-slate-950 px-4 py-3 flex items-center justify-between border-b border-slate-700">
+          <div class="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-400 mr-2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Webflow Node JSON</h2>
+          </div>
+          
+          <button id="copy-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all bg-slate-800 text-slate-300 border border-slate-600 hover:bg-slate-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <svg id="icon-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span id="copy-text">Copy JSON</span>
+          </button>
+        </div>
+        
+        <div class="flex-1 relative overflow-auto custom-scrollbar">
+          <!-- Error State -->
+          <div id="error-state" class="hidden absolute inset-0 flex items-center justify-center p-6 text-red-400 flex-col gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+            <p id="error-message">Failed to parse HTML.</p>
+          </div>
+          
+          <!-- Output State -->
+          <pre id="json-output" class="p-4 font-mono text-xs text-emerald-400/90 leading-relaxed"></pre>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer info -->
+    <div class="mt-6 text-sm text-slate-500 flex items-center justify-center gap-2">
+      <span>HTML DOM</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <span>Recursive Parser</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <span>CSS & Schema Mapping</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <span>Webflow Clipboard Format</span>
+    </div>
+
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // DOM Elements
+      const htmlInput = document.getElementById('html-input');
+      const jsonOutput = document.getElementById('json-output');
+      const errorState = document.getElementById('error-state');
+      const errorMessage = document.getElementById('error-message');
+      const copyBtn = document.getElementById('copy-btn');
+      const copyText = document.getElementById('copy-text');
+      const iconCopy = document.getElementById('icon-copy');
+      const iconCheck = document.getElementById('icon-check');
+
+      // State variables
+      let currentJson = '';
+      let hasError = false;
+
+      // Initialize with default content showing off CSS styles
+      const defaultHTML = `<section class="hero-section main-class attribute:class sm:w-1/2 text-[14px]" style="padding: 60px 20px; background-color: #f3f4f6; border: 1px solid red; text-align: center;">\n  <h1 class="main-heading text-xl font-bold" style="color: #111827; font-size: 3rem; margin-bottom: 10px;">Hello Webflow CSS!</h1>\n  <p class="subtitle text-grey" style="color: #4b5563; margin-bottom: 20px; line-height: 1.5;">This paragraph has <strong>bold text</strong> and <em>italic emphasis</em>.</p>\n  <ul style="text-align: left; max-width: 300px; margin: 0 auto 20px;">\n    <li>Native List Item 1</li>\n    <li>Native List Item 2</li>\n  </ul>\n  <a href="https://example.com" class="cta-button w-full sm:w-auto" style="background-color: #3b82f6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Learn More</a>\n\n  <!-- SVG internals are preserved as DOM elements -->\n  <div style="margin: 20px 0; display: flex; justify-content: center;">\n    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n      <circle cx="12" cy="12" r="10"></circle>\n      <path d="M12 8v8"></path>\n      <path d="M8 12h8"></path>\n    </svg>\n  </div>\n\n  <!-- Empty src images are skipped automatically! -->\n  <img src="" alt="Skipped Image" />\n\n  <!-- Everything else (nav, form, table) converts to custom DOM elements -->\n  <nav class="nav-wrapper p-4 m-2" style="margin-top: 40px; padding: 20px; border: 1px solid #ccc;">\n    <form>\n      <input type="text" placeholder="DOM Element Input" style="padding: 10px;" />\n    </form>\n  </nav>\n</section>`;
+      htmlInput.value = defaultHTML;
+
+      // 1. Map standard HTML to Webflow Node Types
+      const mapNodeType = (tagName) => {
+        const map = {
+          'DIV': 'Block',
+          'SECTION': 'Section',
+          'H1': 'Heading',
+          'H2': 'Heading',
+          'H3': 'Heading',
+          'H4': 'Heading',
+          'H5': 'Heading',
+          'H6': 'Heading',
+          'P': 'Paragraph',
+          'A': 'Link',
+          'IMG': 'Image',
+          'UL': 'List',
+          'OL': 'List',
+          'LI': 'ListItem',
+          'STRONG': 'Strong',
+          'B': 'Strong',
+          'EM': 'Emphasized', // "Emphasis" in UI, but "Emphasized" in JSON schema
+          'I': 'Emphasized',
+          'BLOCKQUOTE': 'Blockquote'
+        };
+        return map[tagName] || 'DOM'; // Default to DOM element for everything else (nav, form, table, etc)
+      };
+
+      // Core Conversion Engine
+      const convertHtmlToWebflow = () => {
+        const htmlString = htmlInput.value;
+        
+        if (!htmlString.trim()) {
+          jsonOutput.textContent = '// Waiting for HTML input...';
+          currentJson = '';
+          copyBtn.disabled = true;
+          return;
+        }
+
+        try {
+          hasError = false;
+          errorState.classList.add('hidden');
+          jsonOutput.classList.remove('hidden');
+          
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(htmlString, 'text/html');
+          
+          const flatNodesList = [];
+          const stylesMap = new Map(); // Tracks unique styles/classes to generate the styles array
+          
+          // Helper: Expand CSS Shorthands (margin, padding, border, etc.)
+          const expandInlineStyles = (cssText) => {
+            if (!cssText) return "";
+            const el = document.createElement('div');
+            el.style.cssText = cssText;
+            const expanded = [];
+            // Shorthands that Webflow Designer struggles with
+            const shorthands = ['margin', 'padding', 'border', 'border-radius', 'border-width', 'border-color', 'border-style', 'background', 'font'];
+            
+            for (let i = 0; i < el.style.length; i++) {
+              const prop = el.style[i];
+              // Let the browser expand shorthands into longhands, filter out the raw shorthand properties
+              if (!shorthands.includes(prop)) {
+                expanded.push(`${prop}: ${el.style.getPropertyValue(prop)}`);
+              }
+            }
+            return expanded.length > 0 ? expanded.join('; ') + ';' : "";
+          };
+
+          // 2. Recursive flattening function
+          const traverseNode = (node) => {
+            // Handle Text Nodes as separate Webflow items
+            if (node.nodeType === Node.TEXT_NODE) {
+              const text = node.textContent.trim();
+              if (!text) return null; // Ignore pure whitespace
+              
+              const id = crypto.randomUUID();
+              flatNodesList.push({
+                _id: id,
+                text: true,
+                v: text
+              });
+              return id;
+            }
+
+            // Ignore non-element nodes (comments, etc.)
+            if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+            // Skip empty images as per documentation
+            if (node.tagName === 'IMG' && (!node.getAttribute('src') || node.getAttribute('src').trim() === '')) return null;
+
+            const id = crypto.randomUUID();
+            const wfType = mapNodeType(node.tagName);
+            const lowerTag = node.tagName.toLowerCase();
+            
+            const classIds = [];
+            
+            // Helper: Sanitize special characters in class names (e.g., Tailwind's w-1/2, hover:bg-red)
+            const sanitizeClass = (cls) => cls.replace(/[.:\/\[\]()%,#$]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            
+            const classList = node.classList ? Array.from(node.classList).map(sanitizeClass).filter(Boolean) : [];
+            const mainClass = classList.length > 0 ? classList[0] : null;
+            const otherClasses = classList.length > 1 ? classList.slice(1).join(' ') : null;
+
+            // --- CSS Engine Integration ---
+            const rawStyle = node.getAttribute('style');
+            const inlineStyle = rawStyle ? expandInlineStyles(rawStyle) : "";
+            
+            // A. Convert FIRST native HTML class to Webflow Style Object (and absorb inline styles)
+            if (mainClass) {
+              if (!stylesMap.has(mainClass)) {
+                stylesMap.set(mainClass, {
+                  _id: crypto.randomUUID(),
+                  fake: false,
+                  type: "class",
+                  name: mainClass,
+                  namespace: "",
+                  comb: "",
+                  styleLess: inlineStyle, // Inject inline styles directly into the main class
+                  variants: {},
+                  children: [],
+                  createdBy: "57545639e00e5fe22ed713e3",
+                  origin: null,
+                  selector: null
+                });
+              } else if (inlineStyle) {
+                // If the class was already registered but another element has more inline styles, merge them safely
+                const existingStyle = stylesMap.get(mainClass);
+                if (existingStyle.styleLess && !existingStyle.styleLess.trim().endsWith(';')) {
+                  existingStyle.styleLess += '; ';
+                }
+                existingStyle.styleLess += inlineStyle;
+              }
+              // Link the node to this style ID
+              classIds.push(stylesMap.get(mainClass)._id);
+            }
+            // B. Convert Inline CSS to an Auto-Generated Webflow Style Object (ONLY if no main class exists)
+            else if (inlineStyle) {
+              const inlineClassName = `css-${id.substring(0, 8)}`; // Generate a unique visual class name
+              const inlineStyleId = crypto.randomUUID();
+              
+              stylesMap.set(inlineClassName, {
+                _id: inlineStyleId,
+                fake: false,
+                type: "class",
+                name: inlineClassName,
+                namespace: "",
+                comb: "",
+                styleLess: inlineStyle, // Webflow expects raw CSS properties here!
+                variants: {},
+                children: [],
+                createdBy: "57545639e00e5fe22ed713e3",
+                origin: null,
+                selector: null
+              });
+              
+              // Apply the new inline-css class to the element
+              classIds.push(inlineStyleId);
+            }
+
+            // --- Node Payload Assembly ---
+
+            // Base Webflow Node Structure
+            const wfNode = {
+              _id: id,
+              type: wfType,
+              tag: wfType === 'DOM' ? 'div' : lowerTag,
+              classes: classIds, // Attach all CSS styling IDs
+              children: [],
+              data: {
+                text: false,
+                devlink: { runtimeProps: {}, slot: "" },
+                displayName: "",
+                attr: { id: node.id || "" },
+                xattr: [],
+                search: { exclude: false },
+                visibility: { conditions: [], keepInHtml: { tag: "False", val: {} } }
+              }
+            };
+
+            // Inject type-specific data requirements to prevent Webflow crash
+            if (['Block', 'Section', 'Heading', 'List', 'Blockquote', 'Strong', 'Emphasized'].includes(wfType)) {
+              wfNode.data.tag = lowerTag;
+            }
+
+            if (wfType === 'Link') {
+              wfNode.data.button = false;
+              wfNode.data.block = "inline";
+              wfNode.data.link = { mode: "external", url: node.getAttribute('href') || '#', preload: "none" };
+              wfNode.data.eventIds = [];
+            }
+
+            if (wfType === 'Image') {
+              wfNode.data.img = { id: "plugins/Basic/assets/placeholder.svg" }; // Prevent plugin crash
+              wfNode.data.srcsetDisabled = false;
+              wfNode.data.sizes = [];
+              wfNode.data.attr.src = node.getAttribute('src') || '';
+              wfNode.data.attr.alt = node.getAttribute('alt') || '__wf_reserved_inherit';
+              wfNode.data.attr.width = node.getAttribute('width') || 'auto';
+              wfNode.data.attr.height = node.getAttribute('height') || 'auto';
+              wfNode.data.attr.loading = "lazy";
+            }
+
+            if (wfType === 'List') {
+              wfNode.data.list = { type: lowerTag === 'ol' ? 'ordered' : 'list', unstyled: false };
+            }
+
+            if (wfType === 'ListItem') {
+              wfNode.data.list = { type: "item" };
+            }
+
+            if (wfType === 'DOM') {
+              wfNode.data = {
+                tag: lowerTag,
+                attributes: [],
+                text: false,
+                slot: "",
+                visibility: { conditions: [], keepInHtml: { tag: "False", val: {} } }
+              };
+              Array.from(node.attributes).forEach(attr => {
+                if (attr.name !== 'style' && attr.name !== 'class') { // Map everything except style and class directly
+                   wfNode.data.attributes.push({ name: attr.name, value: attr.value });
+                }
+              });
+              // Add remaining utility classes as a generic custom attribute
+              if (otherClasses) {
+                wfNode.data.attributes.push({ name: 'class', value: otherClasses });
+              }
+            }
+
+            // Push parent FIRST so it appears before its children in the flat array
+            flatNodesList.push(wfNode);
+
+            // Recursively process children and push their generated IDs to the parent's children array
+            Array.from(node.childNodes).forEach(child => {
+              const childId = traverseNode(child);
+              if (childId) {
+                wfNode.children.push(childId);
+              }
+            });
+
+            // Map remaining classes to Webflow's custom attributes (xattr) array
+            if (wfType !== 'DOM' && otherClasses) {
+              wfNode.data.xattr.push({ name: "class", value: otherClasses });
+            }
+
+            return id;
+          };
+
+          // Start traversal on root elements
+          Array.from(doc.body.childNodes).forEach(rootNode => traverseNode(rootNode));
+
+          // The EXACT clipboard structure required by Webflow
+          const webflowClipboardPayload = {
+            type: "@webflow/XscpData",
+            payload: {
+              nodes: flatNodesList,
+              styles: Array.from(stylesMap.values()), // Inject generated Style array!
+              assets: [],
+              ix1: [],
+              ix2: {
+                interactions: [],
+                events: [],
+                actionLists: []
+              }
+            },
+            meta: {
+              droppedLinks: 0,
+              dynBindRemovedCount: 0,
+              dynListBindRemovedCount: 0,
+              paginationRemovedCount: 0,
+              universalBindingsRemovedCount: 0,
+              unlinkedSymbolCount: 0,
+              codeComponentsRemovedCount: 0
+            }
+          };
+
+          currentJson = JSON.stringify(webflowClipboardPayload, null, 2);
+          jsonOutput.textContent = currentJson;
+          copyBtn.disabled = false;
+
+        } catch (err) {
+          console.error(err);
+          hasError = true;
+          currentJson = '';
+          copyBtn.disabled = true;
+          jsonOutput.classList.add('hidden');
+          errorState.classList.remove('hidden');
+          errorMessage.textContent = "Failed to parse HTML. Please ensure it is valid.";
+        }
+      };
+
+      // Debounced Input Handler
+      let debounceTimer;
+      htmlInput.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(convertHtmlToWebflow, 500);
+      });
+
+      copyBtn.addEventListener('click', () => {
+        if (!currentJson || hasError) return;
+
+        // Webflow STRICTLY requires 'application/json' in the clipboard data.
+        // We intercept the copy event to explicitly set this MIME type.
+        const copyHandler = (e) => {
+          e.clipboardData.setData('application/json', currentJson);
+          e.clipboardData.setData('text/plain', currentJson); // Fallback text
+          e.preventDefault(); // Prevent standard text selection copying
+        };
+
+        document.addEventListener('copy', copyHandler);
+        
+        // Create a dummy selection so the browser allows the execCommand('copy')
+        const dummy = document.createElement('span');
+        dummy.textContent = 'wf-copy';
+        document.body.appendChild(dummy);
+        
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(dummy);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        let copySuccess = false;
+        try {
+          copySuccess = document.execCommand('copy');
+        } catch (err) {
+          console.error('Advanced clipboard injection failed', err);
+        }
+        
+        // Cleanup DOM and Listeners
+        selection.removeAllRanges();
+        document.body.removeChild(dummy);
+        document.removeEventListener('copy', copyHandler);
+
+        if (copySuccess) {
+          // Update UI to show "Copied" state
+          copyBtn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-600');
+          copyBtn.classList.add('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/50');
+          iconCopy.classList.add('hidden');
+          iconCheck.classList.remove('hidden');
+          copyText.textContent = 'Copied JSON';
+
+          // Revert UI after 2 seconds
+          setTimeout(() => {
+            copyBtn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-600');
+            copyBtn.classList.remove('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/50');
+            iconCheck.classList.add('hidden');
+            iconCopy.classList.remove('hidden');
+            copyText.textContent = 'Copy JSON';
+          }, 2000);
+        }
+      });
+
+      // Run initial conversion
+      convertHtmlToWebflow();
+    });
+  </script>
+</body>
+</html>
