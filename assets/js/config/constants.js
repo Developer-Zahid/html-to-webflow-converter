@@ -71,6 +71,25 @@ export const TYPES_WITH_DATA_TAG = ["Block", "Section", "Heading", "List", "Bloc
 // text node.
 export const EMBED_TAGS = ["STYLE", "SCRIPT", "NOSCRIPT", "LINK"];
 
+/**
+ * How the `mergeEmbeds` option buckets those tags. A page with several <style> and <script> tags
+ * otherwise produces a Code Embed for each one, which clutters the Navigator.
+ *
+ * NOSCRIPT is deliberately in neither bucket: it holds fallback MARKUP, not CSS or JS, so folding
+ * it into either would be wrong. It keeps its own embed, in place.
+ */
+export const CSS_EMBED_TAGS = ["STYLE", "LINK"];
+export const JS_EMBED_TAGS = ["SCRIPT"];
+
+/**
+ * Navigator labels for the two merged embeds. Webflow reads an element's Navigator name from a
+ * NODE-level `meta.displayName` - NOT `data.displayName`, which stays "".
+ */
+export const MERGED_EMBED_NAMES = {
+	css: "CSS Code Embed",
+	js: "JS Code Embed",
+};
+
 // Shorthands the Designer struggles with. The browser expands them into longhands for us; these
 // raw shorthand names are then dropped so only the longhands survive.
 export const CSS_SHORTHANDS = ["margin", "padding", "border", "border-radius", "border-width", "border-color", "border-style", "background", "font"];

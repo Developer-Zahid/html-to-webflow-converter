@@ -13,11 +13,13 @@ import { createElementNode, createEmbedNode, createTextNode, mapNodeType } from 
  * @param {{ nativeForms?: boolean }} [deps.options]
  * @param {Map<Node, string>} [deps.sheetLeftovers]  per-<style> CSS that could NOT be turned
  *   into native Webflow styles and therefore still needs a Code Embed
+ * @param {ReturnType<import("./embed-merge.js").createEmbedCollector>} [deps.embedCollector]
+ *   when present, code tags are handed to it instead of becoming an embed where they sit
  * @returns {(node: Node) => string|null} traverse - returns the new node's id, or null if the
  *   node produced nothing (whitespace, a comment, an empty image, a consumed label, a <style>
- *   whose rules all became native styles).
+ *   whose rules all became native styles, a code tag claimed by the collector).
  */
-export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = new Map() }) => {
+export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = new Map(), embedCollector = null }) => {
 	// Labels swallowed into a checkbox/radio wrapper must not be emitted again by the walk.
 	const consumed = new WeakSet();
 	// The <form> currently being converted, so a control can look up its label within it.
@@ -59,20 +61,25 @@ export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = 
 		if (EMBED_TAGS.includes(node.tagName)) {
 			// Rules that became native Webflow styles are stripped from the embed. If the whole
 			// block was adopted there is nothing left to embed, so drop the element entirely.
+			let source = node;
 			if (node.tagName === "STYLE" && sheetLeftovers.has(node)) {
 				const leftover = sheetLeftovers.get(node).trim();
 				if (!leftover) return null;
 
 				// Rebuild from a shallow clone so any attributes (media, nonce) survive.
-				const skeleton = node.cloneNode(false);
-				skeleton.textContent = `\n${leftover}\n`;
-				const embedId = newId();
-				nodes.push(createEmbedNode(embedId, node, skeleton.outerHTML));
-				return embedId;
+				source = node.cloneNode(false);
+				source.textContent = `\n${leftover}\n`;
+			}
+
+			// Merging is on and this tag is CSS or JS: it contributes to one of the two shared
+			// embeds that get appended once the walk is done, and emits no node of its own.
+			if (embedCollector?.accepts(node.tagName)) {
+				embedCollector.add(node.tagName, source);
+				return null;
 			}
 
 			const embedId = newId();
-			nodes.push(createEmbedNode(embedId, node));
+			nodes.push(createEmbedNode(embedId, node, source === node ? undefined : source.outerHTML));
 			return embedId;
 		}
 

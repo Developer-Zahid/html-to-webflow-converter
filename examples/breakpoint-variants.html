@@ -1,0 +1,153 @@
+<!--
+  Test snippet for the breakpoint-aware @media adoption in assets/js/converter/stylesheet.js.
+
+  Paste this into the converter's editor and copy the result into a live Designer to check:
+    - every one of Webflow's 6 breakpoint widths lands on the right variant key
+      (medium/small/tiny/large/xl/xxl)
+    - a breakpoint combined with a pseudo-state lands on `<breakpoint>_<state>`
+      (medium_hover, xxl_focus-visible, ...)
+    - a `screen and` / `only screen and` prefix is tolerated
+    - a rule inside a matching @media that does NOT map (wrong class, unsupported pseudo)
+      is left behind in the Code Embed, still wrapped in its own @media
+    - a media query that does not exactly match a breakpoint (max-width: 990px, print,
+      (hover: hover), an unsupported pseudo like :first-child) never gets adopted at all
+-->
+<style>
+  /* Base (main) breakpoint - also exercises the 4 adoptable pseudo-states at main. */
+  .bp-card {
+    display: block;
+    padding: 16px;
+    background-color: #f3f4f6;
+    color: #111827;
+    font-size: 1rem;
+  }
+  .bp-card:hover { color: #1d4ed8; }
+  .bp-card:active { color: #1e3a8a; }
+  .bp-card:focus { color: #7c3aed; }
+  .bp-card:focus-visible { outline: 2px solid #f97316; }
+
+  /* medium: max-width: 991px */
+  @media screen and (max-width: 991px) {
+    .bp-card { font-size: 0.875rem; background-color: #e5e7eb; }
+    .bp-card:hover { color: #b91c1c; }
+  }
+
+  /* small: max-width: 767px */
+  @media (max-width: 767px) {
+    .bp-card { font-size: 0.75rem; }
+  }
+
+  /* tiny: max-width: 479px */
+  @media only screen and (max-width: 479px) {
+    .bp-card { font-size: 0.625rem; padding: 8px; }
+  }
+
+  /* large: min-width: 1280px */
+  @media (min-width: 1280px) {
+    .bp-card { font-size: 1.125rem; }
+    .bp-card:focus { color: #047857; }
+  }
+
+  /* xl: min-width: 1440px */
+  @media (min-width: 1440px) {
+    .bp-card { font-size: 1.25rem; }
+  }
+
+  /* xxl: min-width: 1920px */
+  @media (min-width: 1920px) {
+    .bp-card { font-size: 1.5rem; }
+    .bp-card:focus-visible { outline-color: #db2777; }
+  }
+
+  /* Mixed rule inside a matching breakpoint: .bp-card adopts, .bp-unknown does not, so
+     this whole @media survives in the embed carrying only the unmapped rule. */
+  @media (max-width: 991px) {
+    .bp-unknown { color: red; }
+  }
+
+  /* Near-miss width - must NOT be adopted, stays in the embed verbatim. */
+  @media (max-width: 990px) {
+    .bp-card { letter-spacing: 1px; }
+  }
+
+  /* Feature query - never a breakpoint match. */
+  @media (hover: hover) {
+    .bp-card { text-decoration: underline; }
+  }
+
+  /* Print - never a breakpoint match. */
+  @media print {
+    .bp-card { color: black; background: none; }
+  }
+
+  /* Unsupported pseudo-class even though the width matches - the rule itself must fail
+     adoption and stay in the embed, without blocking the rest of the @media block. */
+  @media (min-width: 1280px) {
+    .bp-card:first-child { border-top: none; }
+  }
+</style>
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo Full HTML</title>
+</head>
+<body>
+  <style>
+    .new-card {
+      position: relative;
+      isolation: isolate;
+      background-color: #1e293b;
+      min-height: 100dvh;
+    }
+    .new-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border: 2px solid #3b82f6;
+      border-radius: 0.5rem;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
+  <style>
+    .new-card:active {
+      background-color: blue;
+    }
+    .new-card:is(:hover, :focus-visible) {
+      background-color: red;
+    }
+    @media (min-width: 640px) {
+      .new-card {
+        background-color: #4ec218;
+        min-height: 50dvh;
+      }
+    }
+    @media screen and (hover: hover) {
+      .new-card:hover {
+        background-color: #facc15;
+      }
+    }
+  </style>
+  <a class="new-card" href="#">Breakpoint variants test card</a>
+<div class="bp-card">Breakpoint variants test card</div>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'custom-blue': '#1e40af',
+          },
+        },
+      },
+    }
+  </script>
+</body>
+</html>
+
+

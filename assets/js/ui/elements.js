@@ -6,6 +6,7 @@
 const IDS = {
 	htmlInput: "html-input",
 	nativeFormsToggle: "native-forms-toggle",
+	mergeEmbedsToggle: "merge-embeds-toggle",
 	jsonOutput: "json-output",
 	errorState: "error-state",
 	errorMessage: "error-message",

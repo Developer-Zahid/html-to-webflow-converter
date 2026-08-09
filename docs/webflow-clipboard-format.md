@@ -131,6 +131,22 @@ through to a Custom Element.
 Generate `v` with a shallow clone — `node.cloneNode(false).outerHTML` — which keeps the tag and
 its attributes (`<style media="print"></style>`) and drops the body.
 
+A bare `<style></style>` / `<script></script>` is a valid `v` even when `data.content` holds
+several tags — verified by pasting one embed carrying a `<script src>` plus an inline `<script>`.
+`data.embed.meta.script` must still be `true` for anything containing a script, or Webflow
+renders it as an HTML embed instead of showing the "only displays in preview mode" notice.
+
+### Navigator labels live in a NODE-level `meta`
+
+```jsonc
+{ "_id": "…", "type": "HtmlEmbed", "meta": { "displayName": "CSS Code Embed" },
+  "data": { "displayName": "", … } }
+```
+
+`meta.displayName` is a **sibling of `data`**, not a key inside it — `data.displayName` stays
+`""` and setting it alone does nothing. Verified live: an embed pasted with the `meta` key shows
+as "CSS Code Embed" in the Navigator, where every other embed shows the generic "Code Embed".
+
 ### Native form elements (`nativeForms`)
 
 ```
@@ -177,12 +193,33 @@ Deriving the id deterministically from the class name makes repeat pastes idempo
 merge with classes the site already created by hand — those carry Webflow's own ids, which are
 unknowable from outside.
 
-### Pseudo-state variants
+### Variants: breakpoints and pseudo-states
 
-Key format is `<breakpoint>_<state>`, `main` being the base (desktop) breakpoint:
+`styleLess` itself holds the base (`main`, desktop) breakpoint's styles. Everything else lives
+in `variants`, keyed by the bare breakpoint name for that breakpoint's base styles and
+`<breakpoint>_<state>` for pseudo-states. Both verified from a reference payload copied out of
+a live Designer (an element styled at every breakpoint and state) and by pasting a converter
+payload back in — the Style panel picked every variant up on its breakpoint.
+
+| variant key | media query in Webflow's published CSS |
+| --- | --- |
+| `medium` | `(max-width: 991px)` |
+| `small` | `(max-width: 767px)` |
+| `tiny` | `(max-width: 479px)` |
+| `large` | `(min-width: 1280px)` |
+| `xl` | `(min-width: 1440px)` |
+| `xxl` | `(min-width: 1920px)` |
+
+max-width variants cascade DOWN from `main`, min-width variants cascade UP — the same
+semantics the equivalent media queries have, which is why the converter can lift an
+exactly-matching `@media` rule into a variant without changing behaviour. A query that does
+not exactly match one of those six conditions (modulo a `screen and` / `only screen and`
+prefix) has no variant equivalent and must stay in a Code Embed.
+
+Pseudo-state suffixes:
 
 ```
-main_hover   main_active   main_focus   main_focus-visible
+hover   active   focus   focus-visible        e.g. main_hover, medium_hover, xxl_focus
 ```
 
 Verified that Webflow emits real CSS for each (`.cls:hover`, `.cls.-wfp-hover`, …). Only those
@@ -222,8 +259,25 @@ editable, correct CSS), whereas wrongly including one makes it vanish from the U
 
 ### CSSOM normalization traps
 
-The browser's CSS parser disagrees with Webflow in ways that silently push values into Custom
-properties. Handled via `PREFERRED_SHORTHANDS` and `PROPERTY_ALIASES`:
+Two separate problems, both caused by leaning on the browser's CSS parser.
+
+**Never re-emit CSS with `rule.cssText`.** The CSSOM's serialization is not the source text — it
+expands some shorthands and collapses others, unpredictably:
+
+| Source | `rule.cssText` gives back |
+| --- | --- |
+| `border-top: none` | `border-top-width: medium; border-top-style: none; border-top-color: currentcolor` |
+| `transition: all .3s ease` | `transition: .3s` |
+| `background: none` | `background: none` (round-trips — which is what makes this trap easy to miss) |
+
+That is fine for the Style panel, which wants longhands, but wrong for the CSS the converter
+hands back to a Code Embed: the user still has to read and maintain it. So `stylesheet.js`
+slices leftover rules out of the **original source** with its own top-level splitter and uses
+the CSSOM only to *classify* them. The splitter has to skip comments and strings before
+counting braces — `content: "}"` is legal CSS.
+
+**Property-level disagreements** with Webflow that silently push values into Custom properties.
+Handled via `PREFERRED_SHORTHANDS` and `PROPERTY_ALIASES`:
 
 | Source | Browser gives | Webflow writes |
 | --- | --- | --- |

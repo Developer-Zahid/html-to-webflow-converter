@@ -1,5 +1,6 @@
 import { EMBED_TAGS } from "../config/constants.js";
 import { normalizeClassName } from "./class-names.js";
+import { createEmbedCollector } from "./embed-merge.js";
 import { newId } from "./ids.js";
 import { createWrapperNode } from "./nodes.js";
 import { collectStylesheets } from "./stylesheet.js";
@@ -47,6 +48,8 @@ const createPayload = (nodes, styles) => ({
  * @param {object} [options]
  * @param {boolean} [options.nativeForms=false]  convert <form> and its fields into native
  *   Webflow form elements instead of Custom Elements
+ * @param {boolean} [options.mergeEmbeds=false]  fold every <style>/<link> into one Code Embed and
+ *   every <script> into another, instead of one embed per tag
  * @returns {object} the payload, ready to be JSON.stringify'd onto the clipboard
  */
 export const convertHtmlToWebflow = (html, options = {}) => {
@@ -65,7 +68,8 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 
 	const nodes = [];
 	const styles = createStyleRegistry({ sheetRules: rulesByClass });
-	const traverse = createTraverser({ nodes, styles, options, sheetLeftovers: leftoverByElement });
+	const embedCollector = options.mergeEmbeds ? createEmbedCollector() : null;
+	const traverse = createTraverser({ nodes, styles, options, sheetLeftovers: leftoverByElement, embedCollector });
 
 	const rootIds = [];
 	const addRoot = (node) => {
@@ -81,6 +85,21 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 		.forEach(addRoot);
 
 	Array.from(doc.body.childNodes).forEach(addRoot);
+
+	// The merged embeds are built only once every code tag has been seen. They bracket the
+	// content the way a document does - styles ahead of what they style, scripts after the markup
+	// they act on, which is where the author's own <script> tags almost always were.
+	if (embedCollector) {
+		const { cssNode, jsNode } = embedCollector.toNodes();
+		if (cssNode) {
+			nodes.push(cssNode);
+			rootIds.unshift(cssNode._id);
+		}
+		if (jsNode) {
+			nodes.push(jsNode);
+			rootIds.push(jsNode._id);
+		}
+	}
 
 	// Webflow's cross-site paste path reifies the payload into ONE subtree and crashes the whole
 	// Designer on more than one top-level node. Snippets with several top-level elements are

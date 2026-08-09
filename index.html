@@ -51,11 +51,19 @@
             <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Source HTML</h2>
           </div>
 
-          <label for="native-forms-toggle" class="flex items-center gap-2 cursor-pointer select-none group" title="Convert &lt;form&gt; and its fields into native Webflow form elements instead of custom elements">
-            <span class="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">Native Forms</span>
-            <input type="checkbox" id="native-forms-toggle" class="sr-only peer">
-            <span class="relative w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-          </label>
+          <div class="flex items-center gap-4">
+            <label for="merge-embeds-toggle" class="flex items-center gap-2 cursor-pointer select-none group" title="Fold every &lt;style&gt; and &lt;link&gt; into one Code Embed and every &lt;script&gt; into another, instead of one embed per tag">
+              <span class="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">Merge Embeds</span>
+              <input type="checkbox" id="merge-embeds-toggle" class="sr-only peer">
+              <span class="relative w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+
+            <label for="native-forms-toggle" class="flex items-center gap-2 cursor-pointer select-none group" title="Convert &lt;form&gt; and its fields into native Webflow form elements instead of custom elements">
+              <span class="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">Native Forms</span>
+              <input type="checkbox" id="native-forms-toggle" class="sr-only peer">
+              <span class="relative w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+          </div>
         </div>
         <textarea id="html-input" class="flex-1 w-full bg-slate-800 text-slate-300 p-4 font-mono text-sm focus:outline-none resize-none focus:ring-2 ring-inset ring-blue-500/50 leading-relaxed custom-scrollbar" placeholder="Paste your HTML here..." spellcheck="false"></textarea>
       </div>

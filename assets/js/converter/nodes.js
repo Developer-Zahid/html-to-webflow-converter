@@ -41,38 +41,52 @@ export const createTextNode = (id, text) => ({
  *   v = "<style></style>"  -> works; data.content keeps the real source
  * A shallow clone keeps the tag and its attributes and drops the body.
  */
-export const createEmbedNode = (id, element, codeOverride) => {
+const embedNode = (id, skeleton, code) => ({
+	_id: id,
+	type: "HtmlEmbed",
+	tag: "div",
+	classes: [],
+	children: [],
+	v: skeleton,
+	data: {
+		search: { exclude: true },
+		embed: {
+			type: "html",
+			meta: {
+				html: "",
+				div: /<div\b/i.test(code),
+				script: /<script\b/i.test(code),
+				compilable: false,
+				iframe: /<iframe\b/i.test(code),
+			},
+		},
+		insideRTE: false,
+		content: code, // the verbatim source Webflow publishes
+		xattr: [],
+		devlink: { runtimeProps: {}, slot: "" },
+		displayName: "",
+		attr: { id: "" },
+		visibility: emptyVisibility(),
+	},
+});
+
+export const createEmbedNode = (id, element, codeOverride) =>
 	// `codeOverride` lets a <style> embed carry only the rules that could not become native
 	// Webflow styles, while `v` still comes from the real element so its attributes survive.
-	const code = codeOverride ?? element.outerHTML;
-	return {
-		_id: id,
-		type: "HtmlEmbed",
-		tag: "div",
-		classes: [],
-		children: [],
-		v: element.cloneNode(false).outerHTML,
-		data: {
-			search: { exclude: true },
-			embed: {
-				type: "html",
-				meta: {
-					html: "",
-					div: /<div\b/i.test(code),
-					script: /<script\b/i.test(code),
-					compilable: false,
-					iframe: /<iframe\b/i.test(code),
-				},
-			},
-			insideRTE: false,
-			content: code, // the verbatim source Webflow publishes
-			xattr: [],
-			devlink: { runtimeProps: {}, slot: "" },
-			displayName: "",
-			attr: { id: "" },
-			visibility: emptyVisibility(),
-		},
-	};
+	embedNode(id, element.cloneNode(false).outerHTML, codeOverride ?? element.outerHTML);
+
+/**
+ * One Code Embed standing in for every <style>/<link> or every <script> on the page
+ * (the `mergeEmbeds` option).
+ *
+ * There is no single source element to clone a skeleton from, so `v` is the bare tag - which is
+ * exactly what the skeleton rule asks for. The Navigator label comes from a NODE-level `meta`,
+ * a different key from the `data.displayName` every other node carries.
+ */
+export const createMergedEmbedNode = (id, skeleton, code, displayName) => {
+	const node = embedNode(id, skeleton, code);
+	node.meta = { displayName };
+	return node;
 };
 
 /**

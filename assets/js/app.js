@@ -26,7 +26,10 @@ export const initApp = () => {
 		}
 
 		try {
-			const payload = convertHtmlToWebflow(html, { nativeForms: els.nativeFormsToggle.checked });
+			const payload = convertHtmlToWebflow(html, {
+				nativeForms: els.nativeFormsToggle.checked,
+				mergeEmbeds: els.mergeEmbedsToggle.checked,
+			});
 			currentJson = JSON.stringify(payload, null, 2);
 			view.renderJson(currentJson);
 		} catch (err) {
@@ -44,6 +47,7 @@ export const initApp = () => {
 
 	// Flipping a conversion option re-runs immediately - there is nothing to debounce.
 	els.nativeFormsToggle.addEventListener("change", convert);
+	els.mergeEmbedsToggle.addEventListener("change", convert);
 
 	// Must stay inside the click handler - the copy is only permitted during a user gesture.
 	els.copyBtn.addEventListener("click", () => {

@@ -24,6 +24,7 @@ assets/js/
     traverse.js                 recursive DOM walk, delegates forms + embeds
     nodes.js                    node factories (element, text, embed, wrapper)
     stylesheet.js               splits <style> into native styles vs leftover CSS
+    embed-merge.js              the `mergeEmbeds` option: one CSS + one JS Code Embed
     style-registry.js           the payload's `styles` array + per-element class ids
     inline-css.js               declaration serialization (shorthands, @raw wrapping)
     element-styles.js           shared "classes + passthrough class attr" helper
@@ -44,11 +45,18 @@ shorthands.
 ### Options
 
 ```js
-convertHtmlToWebflow(html, { nativeForms: true })
+convertHtmlToWebflow(html, { nativeForms: true, mergeEmbeds: true })
 ```
 
 - `nativeForms` (default `false`, wired to the "Native Forms" toggle in the UI) — convert
   `<form>` and its fields into native Webflow form elements instead of Custom Elements.
+- `mergeEmbeds` (default `false`, wired to the "Merge Embeds" toggle) — fold every `<style>` and
+  `<link>` into a single Code Embed and every `<script>` into another, instead of emitting one
+  embed per tag. The two are named "CSS Code Embed" / "JS Code Embed" in the Navigator via a
+  node-level `meta.displayName`, and are placed around the content — CSS first, JS last — the way
+  a document orders them. `<noscript>` is in neither bucket (it holds markup, not CSS or JS) and
+  keeps its own embed in place. Off by default because one-embed-per-tag preserves document order
+  exactly.
 
 Stylesheet adoption (see below) is **always on**, not behind a toggle.
 
@@ -113,15 +121,23 @@ extension or Designer Extension), which is a different product shape.
 
 ### Other gaps
 
-- **Media queries always go to the Code Embed**, including ones matching Webflow's own
-  breakpoints. Mapping `max-width: 991px` → the `medium` variant is feasible but the
-  breakpoint variant-key names are unverified — get a reference payload first.
-- **Only the `main` (desktop) breakpoint** is produced for state variants.
-- **Only 4 pseudo-states** are adopted: `:hover`, `:active`, `:focus`, `:focus-visible`.
+- **Only media queries that exactly match Webflow's breakpoint widths are adopted** into
+  breakpoint variants (`max-width: 991/767/479px` → `medium`/`small`/`tiny`,
+  `min-width: 1280/1440/1920px` → `large`/`xl`/`xxl`; a `screen and` / `only screen and`
+  prefix is tolerated). Any other media query — unusual widths, ranges, feature queries like
+  `(hover: hover)`, `print` — stays whole in the Code Embed, as does any non-adoptable rule
+  inside a matching query (re-wrapped in its `@media`). Variant keys verified against a live
+  Designer; see `docs/webflow-clipboard-format.md`.
+- **Only 4 pseudo-states** are adopted: `:hover`, `:active`, `:focus`, `:focus-visible`
+  (at any breakpoint — `medium_hover` etc.).
   Others (`:visited`, `:first-child`, pseudo-*elements*) stay in the embed.
-- **Leftover CSS is re-serialized by the browser**, so `transition: all 0.3s ease` comes back
-  as `transition: 0.3s` (equivalent). If *nothing* in a `<style>` is adopted, the author's
-  original text is kept verbatim instead.
+- **Leftover CSS keeps the author's original text.** Rules are sliced out of the source by a
+  hand-rolled top-level splitter rather than printed from the CSSOM, because `rule.cssText`
+  rewrites declarations (`border-top: none` → three longhands). The CSSOM is used only to
+  *classify* each slice. Comments *between* rules are dropped once anything in the block is
+  adopted — a `/* medium breakpoint */` left stranded above a rule that moved into the Style
+  panel is worse than no comment. If *nothing* is adopted the whole original block is kept,
+  comments and all.
 - **Unsupported form input types** (`file`, `date`, `range`, `color`, `hidden`) fall back to
   Custom Elements — Webflow has no native field for them.
 - **`img` loses Webflow's asset pipeline.** It is emitted as a Custom Element to preserve the
