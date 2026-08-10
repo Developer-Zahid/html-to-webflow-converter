@@ -1,4 +1,5 @@
-import { FALLBACK_NODE_TYPE, NODE_TYPE_MAP, TYPES_WITH_DATA_TAG } from "../config/constants.js";
+import { ALT_DECORATIVE, FALLBACK_NODE_TYPE, IMAGE_ATTRIBUTES, IMAGE_DEFAULT_LOADING, NODE_TYPE_MAP, TYPES_WITH_DATA_TAG } from "../config/constants.js";
+import { assetIdForSrc } from "./images.js";
 
 /**
  * Factories for the individual entries of the payload's `nodes` array.
@@ -19,6 +20,7 @@ const RESERVED_ATTRIBUTES = ["class", "style", "id"];
 /** Per-type additions to the reserved list. */
 const NATIVELY_MAPPED_ATTRIBUTES = {
 	Link: ["href"], // lives in data.link.url
+	Image: IMAGE_ATTRIBUTES, // live in data.attr
 };
 
 /** Map an HTML tag name to its Webflow node type. */
@@ -125,12 +127,51 @@ export const createElementNode = (id, element, wfType, classIds, otherClasses) =
 		node.data.eventIds = [];
 	}
 
+	if (wfType === "LineBreak") {
+		// A LineBreak carries NONE of the usual keys - no devlink, attr, xattr, search or
+		// visibility. Its whole `data` is this marker, copied from Webflow's own payload.
+		node.data = { sym: { inst: "LineBreak" } };
+		return node;
+	}
+
 	if (wfType === "List") {
 		node.data.list = { type: lowerTag === "ol" ? "ordered" : "list", unstyled: false };
 	}
 
 	if (wfType === "ListItem") {
 		node.data.list = { type: "item" };
+	}
+
+	if (wfType === "Image") {
+		// `data.img` must be PRESENT. Verified with variants pasted side by side: omitting it
+		// entirely replaces the src with Webflow's grey placeholder, whereas an id that resolves
+		// to nothing - including "" - falls back to `data.attr.src`. So `{ id: "" }` is not the
+		// same as absent; do not "clean it up".
+		//
+		// A real id, recovered from a Webflow asset URL, additionally binds the Image to the
+		// asset, which is what makes Webflow build a responsive srcset. See images.js.
+		node.data.img = { id: assetIdForSrc(element.getAttribute("src") ?? "") };
+		node.data.srcsetDisabled = false;
+		node.data.sizes = [];
+		// Webflow's own Image payload has no `text` key.
+		delete node.data.text;
+
+		// These publish from `data.attr`, unlike every other native type, whose non-native
+		// attributes go to `xattr`. NATIVELY_MAPPED_ATTRIBUTES keeps them out of that list.
+		IMAGE_ATTRIBUTES.forEach((name) => {
+			const value = element.getAttribute(name);
+			if (value !== null) node.data.attr[name] = value;
+		});
+
+		// `alt=""` is HTML for "decorative, skip me", and a MISSING alt leaves the Designer's Alt
+		// Text field simply blank - no better for a screen reader, and invisible as a decision.
+		// Both take Webflow's decorative sentinel; only real alt text survives as itself.
+		if (!node.data.attr.alt) node.data.attr.alt = ALT_DECORATIVE;
+
+		// An <img> that says nothing about loading gets Webflow's own default rather than none,
+		// which would leave the Designer on "Auto: defaults to browser" and load every image
+		// eagerly. A source that DOES specify `loading` keeps whatever it asked for.
+		node.data.attr.loading ??= IMAGE_DEFAULT_LOADING;
 	}
 
 	if (wfType === "DOM") {
@@ -180,6 +221,44 @@ export const createElementNode = (id, element, wfType, classIds, otherClasses) =
  * than one root!" inside reifyElementSubtree and takes the whole Designer down with a
  * "Something went wrong" dialog.
  */
+/**
+ * Paragraph wrapped around top-level text that was written without any tag around it.
+ *
+ * A text node is a CHILD-only shape in Webflow - no `type`, no `tag` - so left as the payload's
+ * root it is not an element at all. Pasting bare text has to produce something that can hold it,
+ * and a Paragraph is what the same text would be in a document.
+ */
+export const createParagraphNode = (id, childIds) => ({
+	_id: id,
+	type: "Paragraph",
+	tag: "p",
+	classes: [],
+	children: childIds,
+	data: {
+		// Only ever built to hold a run of text, so its content is a text flow by construction.
+		text: true,
+		devlink: { runtimeProps: {}, slot: "" },
+		displayName: "",
+		attr: { id: "" },
+		xattr: [],
+		search: { exclude: false },
+		visibility: emptyVisibility(),
+	},
+});
+
+/**
+ * A Div Block used as a TEXT element, for a run of loose text that sits beside block siblings.
+ *
+ * `<div>a<div>x</div></div>` cannot keep "a" as a direct child: the outer div has a block child,
+ * so it is a container, and a container publishes elements rather than text. Webflow's own answer
+ * is a text-type Div Block, which is what this builds.
+ */
+export const createTextBlockNode = (id) => {
+	const node = createWrapperNode(id, []);
+	node.data.text = true;
+	return node;
+};
+
 export const createWrapperNode = (id, childIds) => ({
 	_id: id,
 	type: "Block",

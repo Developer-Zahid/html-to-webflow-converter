@@ -51,6 +51,25 @@ External payloads take Webflow's *cross-site paste* path, which reifies everythi
 subtree. Reproduced with two plain `Block` nodes — nothing to do with embeds or forms. The
 converter wraps multiple roots in a `Block`.
 
+### A text node cannot be the root either
+
+`{ "_id": "…", "text": true, "v": "hello" }` is a **child-only** shape — it has no `type` and no
+`tag`, so it is not an element. It does not crash, but Webflow has to invent a container for it
+and produces a **Div Block with a Text field** rather than anything you asked for.
+
+The same applies one level down. A text node can only sit directly inside an element that is
+itself a text flow (`data.text: true`); once a parent has a block-level child it is a container,
+and its loose text has nowhere legal to go. `<div>a<div>x</div></div>` therefore becomes:
+
+```
+Block                      (container, text:false)
+  Block  text:true  "a"    <- the loose text, given its own text-type Div Block
+  Block  text:true  "x"
+```
+
+The converter wraps top-level text in a `Paragraph` and nested loose text in a text-type
+`Block`, so in both cases the container is one it chose rather than one Webflow guessed.
+
 A crash leaves a "Something went wrong" dialog with a **Send** button (reports to Webflow —
 click Cancel). The crash reload also **severs the undo chain**, so anything pasted before it
 must be deleted by hand.
@@ -73,6 +92,64 @@ Common `data` keys on native elements:
   "visibility": { "conditions": [], "keepInHtml": { "tag": "False", "val": {} } }
 }
 ```
+
+### `data.text` marks "my content IS text"
+
+```jsonc
+{ "type": "Block", "tag": "div", "children": ["<a text node>"],
+  "data": { "text": true, "tag": "div", … } }
+```
+
+`true` when the element's content is a TEXT FLOW. On a `Block` the effect is visible: the
+Navigator stops calling it "Div Block" and labels it with its own text, and the Settings panel
+grows a **Text** field.
+
+**Inline children do not break it.** Webflow's payload for a div reading *"This is some text
+inside of a div block."* carries `text: true` while holding `<code>`, `<em>`, `<sup>`,
+`<strong>`, `<span>` and `<a>` children. Only a **block-level** child makes it a container again.
+Getting this backwards — assuming any element child disqualifies it — is an easy mistake, since
+the text-only case looks like sufficient evidence on its own.
+
+Webflow's own payloads are not uniform about the key — a `Paragraph` holding text has **no
+`text` key at all**, because a paragraph is inherently a text element. The converter writes
+`true` on every type whose content is a text flow, a deliberate simplification verified by paste.
+
+### Inline formatting types
+
+| tag | type |
+| --- | --- |
+| `code` | `InlineCode` |
+| `sup` | `Superscript` |
+| `sub` | `Subscript` |
+| `span` | `Span` — takes `classes`, which is how a styled text span works |
+| `strong`/`b` | `Strong` |
+| `em`/`i` | `Emphasized` |
+
+Without these a `<code>` or `<span>` becomes an opaque Custom Element sitting inside otherwise
+editable text. All six verified by paste, `sub` included (that one was inferred from
+`Superscript` and then confirmed, not read off a payload).
+
+Webflow serializes these inline children **with no `data` key at all**. This converter emits its
+usual full `data`; extra keys are dropped on paste and all six render correctly, so the shapes
+are not required to match.
+
+`<br>` is its own type and the one case where `data` really is different — it carries a `sym`
+marker and **none** of the usual keys (no devlink, attr, xattr, search, visibility):
+
+```jsonc
+{ "type": "LineBreak", "tag": "br", "classes": [], "children": [],
+  "data": { "sym": { "inst": "LineBreak" } } }
+```
+
+A LineBreak counts as inline, so `<div>a<br>b</div>` stays one text flow rather than splitting
+into separate text blocks.
+
+### A Link inside a text flow uses `block: ""`
+
+A standalone Link takes `data.block: "inline"`, which publishes with the `w-inline-block` class.
+Inside a text flow that is wrong — Webflow writes `block: ""` there, giving a plain
+`display: inline` link. The difference is real: an inline-block link will not wrap mid-phrase and
+sits on a different baseline.
 
 ### `class` lives in two different places
 
@@ -146,6 +223,117 @@ renders it as an HTML embed instead of showing the "only displays in preview mod
 `meta.displayName` is a **sibling of `data`**, not a key inside it — `data.displayName` stays
 `""` and setting it alone does nothing. Verified live: an embed pasted with the `meta` key shows
 as "CSS Code Embed" in the Navigator, where every other embed shows the generic "Code Embed".
+
+### Image — THE CANVAS LIES ABOUT `src`
+
+**Read this before touching image conversion.** A native Image renders any external URL
+perfectly on the canvas, survives a Designer reload, and passes every check you can run from
+inside the Designer. It still ships a **broken image**, because on **publish** Webflow rewrites
+the src onto its own CDN, keeping only the path:
+
+| authored src | published src |
+| --- | --- |
+| `https://picsum.photos/seed/x/100/200` | `https://cdn.prod.website-files.com/seed/x/100/200` — 404 |
+| `https://cdn.prod.website-files.com/<site>/<asset>_photo.jpg` | unchanged — the rewrite is a no-op |
+| `https://d3e54v103j8qbb.cloudfront.net/plugins/Basic/assets/placeholder.60f9b1840c.svg` | `https://cdn.prod.website-files.com/plugins/…placeholder…svg` — **AccessDenied** |
+
+That last row is Webflow's own placeholder asset doing this to itself, so it is not something
+the converter causes or can avoid.
+
+This is the single worst failure mode in this file: there is **no signal inside the Designer**.
+Verifying on the canvas is not verifying. **Publish and view the live page.**
+
+**The rewrite belongs to the Image element type, not to image URLs in general.** A Custom
+Element (`type: "DOM"`, `data.tag: "img"`) publishes its `src` untouched — Webflow has no Image
+semantics to apply to it.
+
+Hence `converter/images.js`: an `<img>` is a native Image only when its src already starts with
+`https://cdn.prod.website-files.com/`; everything else stays a Custom Element.
+
+Both halves confirmed on one published page. Of nine images, **exactly two loaded**:
+
+| element | src | published |
+| --- | --- | --- |
+| native Image | `cdn.prod.website-files.com/<site>/<asset>_photo.jpg` | **loads** |
+| Custom Element | `picsum.photos/seed/domtest/100/200` | **loads, URL untouched** |
+| native Image | any other origin | rewritten → broken |
+
+Those two rows are exactly what the converter emits.
+
+### Image — `data.img.id` must be present and EMPTY
+
+```jsonc
+{ "type": "Image", "tag": "img", "classes": [], "children": [],
+  "data": { "attr": { "src": "https://example.com/photo.jpg", "alt": "…",
+                      "width": "100", "height": "200", "loading": "eager", "id": "" },
+            "img": { "id": "" },          // <- the whole trick
+            "srcsetDisabled": false, "sizes": [],
+            "devlink": {…}, "displayName": "", "xattr": [],
+            "search": { "exclude": false }, "visibility": {…} } }
+```
+
+Separate from the publish problem above. `data.img` must be **present**; its `id` decides whether
+the Image is bound to a real asset or just showing a URL:
+
+| `data.img` | result |
+| --- | --- |
+| key absent entirely | src **replaced** with Webflow's placeholder |
+| `{ "id": "" }` | `data.attr.src` used verbatim, **no srcset** |
+| `{ "id": "<id that does not resolve>" }` | same as empty — **degrades gracefully** |
+| `{ "id": "<a real asset on this site>" }` | **bound**: Webflow generates a full responsive srcset |
+
+Empty is not the same as absent, and the difference is invisible until you try all four.
+
+### Recovering the asset id from a URL
+
+A Webflow asset URL carries the id in its own filename:
+
+```
+https://cdn.prod.website-files.com/664a0a1f64f88585601810d7/6706a0e49f52912584691a21_preview-1.avif
+                                   └──── siteId ─────────┘ └──── assetId ────────┘└ origName ┘
+```
+
+So `data.img.id` is derivable from the src alone — see `WEBFLOW_ASSET_ID_IN_URL`. Verified **on a
+published page**, not just the canvas: a derived id produced a **7-entry srcset plus a `sizes`
+attribute**, from an **empty `assets[]`** in the payload. Webflow's
+own copy ships a huge asset descriptor (fileHash, dimensions, every variant, S3 urls); that is
+Webflow exporting what it already has, **not** an input requirement, which matters because a
+converter could never synthesize it from an HTML string.
+
+This is safe to do unconditionally: an id that does not resolve on the target site falls back to
+`data.attr.src` — the unbound behaviour — and a derived id can never point at the *wrong* file,
+because it came out of that file's own URL.
+
+### Webflow's own defaults for an unset Image
+
+```jsonc
+"attr": { "src": "<placeholder>", "loading": "lazy", "width": "auto", "height": "auto",
+          "alt": "__wf_reserved_inherit", "id": "" },
+"img": { "id": "plugins/Basic/assets/placeholder.svg" }
+```
+
+`width`/`height` are the literal string `"auto"`, `loading` defaults to `"lazy"`, and `alt` takes
+one of two reserved sentinels:
+
+| value | meaning |
+| --- | --- |
+| `__wf_reserved_inherit` | inherit the alt text stored on the asset |
+| `__wf_reserved_decorative` | decorative — publishes as `alt=""` |
+
+`alt=""` in source HTML means exactly "decorative", so it maps onto the second one — and so does
+a **missing** `alt`, since omitting the key leaves the Alt Text field blank, which helps a screen
+reader no more than decorative does and hides the decision from the Designer. Only real alt text
+survives as itself.
+
+The converter emits `loading: "lazy"` when the source says nothing, matching Webflow: leaving the
+key off means "Auto: defaults to browser", and browsers only lazy-load when explicitly told to.
+
+`src`/`alt`/`width`/`height`/`loading` live in **`data.attr`**, not `xattr` — that is where the
+Settings panel reads them. Only `src` is required; the others can be omitted and the panel falls
+back to its own defaults. There is no `data.text` key on an Image.
+
+With no asset there is no `srcset`, so Webflow serves no responsive variants, and the Settings
+panel's image chip shows the placeholder's metadata beside a correctly rendering picture.
 
 ### Native form elements (`nativeForms`)
 
@@ -322,9 +510,9 @@ What it would take to bridge it: run inside the Designer (browser extension or D
 Extension), read `CssVariablesStore` to map variable *names* to ids, then emit the binding shape
 instead of a CSS string. That is a different product shape, not a change to this app.
 
-The same reasoning applies to `img` assets: a native Webflow Image resolves its `src` from an
-asset id in `data.img`, so an external URL is discarded and the placeholder renders. Hence
-images are emitted as Custom Elements.
+The same is true of `img` assets, for a different reason: an Image accepts an empty asset id and
+will show any URL on the canvas, but publish rewrites that URL onto Webflow's CDN — so an
+external image cannot be a native Image either. See §2.
 
 ---
 
@@ -347,6 +535,14 @@ refuses `application/json`. You need a **real copy + real Ctrl+V**.
    element to force a `NODE_CLICKED` rebuild before reading.
 6. **Once the Designer crashes, that tab stays unstable** and may crash on later pastes
    regardless of payload. Full page reload before continuing.
+7. **Asset-derived state arrives asynchronously.** An Image bound to a real asset has **no**
+   `srcset` for the first moment after paste — Webflow resolves the asset from the server and
+   fills it in afterwards. Reading immediately reports 0 variants and looks like a failed bind.
+   Re-read before concluding anything.
+8. **The canvas is not the published site.** Anything involving a URL — image `src` above all —
+   must be checked by **publishing and loading the live page**, because Webflow rewrites some of
+   them on the way out and the Designer gives no hint. A canvas screenshot, a `naturalWidth`
+   assertion and a Designer reload all passed for an external image `src` that ships 404.
 
 ### Injecting an arbitrary payload (no tab switching)
 

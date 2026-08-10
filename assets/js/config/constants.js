@@ -11,9 +11,6 @@
 export const CREATED_BY = "57545639e00e5fe22ed713e3";
 
 // Map standard HTML tags to Webflow node types.
-// NOTE: IMG is deliberately absent. A native Webflow Image resolves its src from the asset id
-// in data.img, so an external URL in data.attr.src is discarded and the element renders
-// Webflow's placeholder. Falling through to DOM (a Custom Element) passes the src through intact.
 export const NODE_TYPE_MAP = {
 	// A Block carries its HTML tag in `data.tag`, and Webflow's Tag dropdown accepts a fixed set
 	// of semantic tags. Mapping them here keeps them NATIVE elements (a <nav> shows up in the
@@ -46,7 +43,71 @@ export const NODE_TYPE_MAP = {
 	EM: "Emphasized", // "Emphasis" in the UI, but "Emphasized" in the JSON schema
 	I: "Emphasized",
 	BLOCKQUOTE: "Blockquote",
+	// Inline formatting types, read off a Webflow payload for a div holding mixed rich text.
+	// Without these a <code>/<sup>/<span> becomes an opaque Custom Element inside otherwise
+	// editable text.
+	CODE: "InlineCode",
+	SUP: "Superscript",
+	SUB: "Subscript",
+	SPAN: "Span",
+	// A <br> is a real Webflow element, not a Custom Element - and its `data` is nothing but the
+	// `sym` marker, see createElementNode.
+	BR: "LineBreak",
+	// IMG is deliberately absent: whether it can be a native Image depends on its SRC, not just
+	// its tag, so the decision is made per element in converter/images.js. Falling through to a
+	// Custom Element is the safe default - that publishes the src verbatim.
 };
+
+/**
+ * Attributes a native Image publishes from `data.attr` - where its Settings panel reads them -
+ * rather than from `xattr` like every other native type's non-native attributes.
+ */
+export const IMAGE_ATTRIBUTES = ["src", "alt", "width", "height", "loading"];
+
+/**
+ * Webflow's asset CDN.
+ *
+ * On PUBLISH, Webflow rewrites a native Image's src to this host, keeping only the PATH:
+ * `https://picsum.photos/seed/x/100/200` goes out as
+ * `https://cdn.prod.website-files.com/seed/x/100/200`, which does not exist. An external URL in a
+ * native Image is therefore a broken image on the live site no matter how well it renders on the
+ * canvas - which is exactly how this was missed the first time round.
+ *
+ * A URL already on this host is the one safe case: the rewrite becomes a no-op.
+ */
+export const WEBFLOW_ASSET_URL_PREFIX = "https://cdn.prod.website-files.com/";
+
+/** Webflow's own "no image chosen" graphic, for a src that cannot survive publish. */
+export const WEBFLOW_PLACEHOLDER_IMAGE = "https://d3e54v103j8qbb.cloudfront.net/plugins/Basic/assets/placeholder.60f9b1840c.svg";
+
+/** The asset id Webflow itself writes for that placeholder, straight from its own payload. */
+export const WEBFLOW_PLACEHOLDER_ASSET_ID = "plugins/Basic/assets/placeholder.svg";
+
+/**
+ * A Webflow asset URL carries the asset id in its filename:
+ *   https://cdn.prod.website-files.com/<siteId>/<assetId>_<originalName>
+ * Recovering it lets an Image BIND to the real asset, which is what makes Webflow generate a
+ * responsive srcset. Verified: a derived id produced a 7-entry srcset with no `assets[]` entry in
+ * the payload at all, and an id that does not exist on the target site is harmless - Webflow
+ * falls back to `data.attr.src`.
+ */
+export const WEBFLOW_ASSET_ID_IN_URL = /^https:\/\/cdn\.prod\.website-files\.com\/[^/]+\/([0-9a-f]{24})_/i;
+
+/**
+ * Reserved `alt` values from Webflow's own Image payloads. `alt=""` in HTML means "decorative",
+ * which is exactly what the first one encodes - so the mapping is faithful, not invented.
+ */
+export const ALT_DECORATIVE = "__wf_reserved_decorative";
+export const ALT_INHERIT = "__wf_reserved_inherit";
+
+/**
+ * What an Image gets when the source <img> carries no `loading` attribute.
+ *
+ * Webflow's own default payload writes "lazy", and leaving the key off instead gives the Designer
+ * "Auto: defaults to browser" - a weaker default, since a browser only lazy-loads when the author
+ * asks. Matching Webflow is both the faster page and the less surprising Settings panel.
+ */
+export const IMAGE_DEFAULT_LOADING = "lazy";
 
 /**
  * The exact tags Webflow's "Tag" dropdown offers for a Block (Settings panel -> Tag). Anything
@@ -60,6 +121,15 @@ export const SEMANTIC_BLOCK_TAGS = ["div", "header", "footer", "nav", "main", "s
 
 // Everything else (form, table, svg, figcaption, ...) becomes a Custom Element.
 export const FALLBACK_NODE_TYPE = "DOM";
+
+/**
+ * Tags that flow INSIDE a paragraph rather than sitting beside one.
+ *
+ * Only consulted at the TOP level, to work out how much a run of untagged text pulls in with it
+ * when it gets a Paragraph wrapped around it - see convertHtmlToWebflow. Inside an element the
+ * normal walk already handles them.
+ */
+export const INLINE_TAGS = ["A", "STRONG", "B", "EM", "I", "SPAN", "CODE", "SMALL", "ABBR", "MARK", "SUB", "SUP", "U", "S", "BR"];
 
 // Types that carry their HTML tag in `data.tag`. Strong/Emphasized are deliberately absent -
 // they have no `tag` in Webflow's schema and it is silently dropped on paste.
