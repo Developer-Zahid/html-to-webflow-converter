@@ -25,6 +25,8 @@ assets/js/
     nodes.js                    node factories (element, text, embed, wrapper)
     stylesheet.js               splits <style> into native styles vs leftover CSS
     embed-merge.js              the `mergeEmbeds` option: one CSS + one JS Code Embed
+    images.js                   native Image vs Custom Element, by src (publish-safety)
+    inline-runs.js              text-flow vs container: where loose text needs a wrapper
     style-registry.js           the payload's `styles` array + per-element class ids
     inline-css.js               declaration serialization (shorthands, @raw wrapping)
     element-styles.js           shared "classes + passthrough class attr" helper
@@ -45,11 +47,15 @@ shorthands.
 ### Options
 
 ```js
-convertHtmlToWebflow(html, { nativeForms: true, mergeEmbeds: true })
+convertHtmlToWebflow(html, { nativeForms: true, nativeImages: true, mergeEmbeds: true })
 ```
 
 - `nativeForms` (default `false`, wired to the "Native Forms" toggle in the UI) — convert
   `<form>` and its fields into native Webflow form elements instead of Custom Elements.
+- `nativeImages` (default `false`, wired to the "Native Images" toggle) — make **every** `<img>`
+  a native Image, substituting Webflow's placeholder for any `src` that would not survive
+  publish. Off, only images already on `cdn.prod.website-files.com` go native and the rest stay
+  Custom Elements with their URL intact. See `converter/images.js`.
 - `mergeEmbeds` (default `false`, wired to the "Merge Embeds" toggle) — fold every `<style>` and
   `<link>` into a single Code Embed and every `<script>` into another, instead of emitting one
   embed per tag. The two are named "CSS Code Embed" / "JS Code Embed" in the Navigator via a
@@ -69,14 +75,37 @@ Stylesheet adoption (see below) is **always on**, not behind a toggle.
 | `div`, `header`, `footer`, `nav`, `main`, `article`, `aside`, `address`, `figure` | `Block` with `data.tag` |
 | `section` | `Section` (its own element type) |
 | `h1`–`h6`, `p`, `a`, `ul`/`ol`, `li`, `strong`/`b`, `em`/`i`, `blockquote` | native types |
-| `img` | **Custom Element** — see gotchas |
+| `code`, `sup`, `sub`, `span` | `InlineCode`, `Superscript`, `Subscript`, `Span` |
+| `br` | `LineBreak` — `data` is only `{ sym: { inst: "LineBreak" } }` |
+| `img` on `cdn.prod.website-files.com` | `Image` (native) |
+| `img` anywhere else | Custom Element — or a placeholder `Image` when `nativeImages` is on |
 | `style`, `script`, `link`, `noscript` | `HtmlEmbed` (Code Embed) |
 | everything else (`form`, `table`, `svg`, `figcaption`…) | Custom Element (`type: "DOM"`) |
 | `<form>` + fields, when `nativeForms` is on | `FormWrapper` → `FormForm` + Success/Error |
 
+**Loose text always gets an element of its own.** A text node is a child-only shape — no `type`,
+no `tag` — so it can only live inside an element that is itself a text flow. Wherever text sits
+beside block-level siblings, it gets wrapped:
+
+| where | wrapper |
+| --- | --- |
+| top level (no tag at all) | `Paragraph` |
+| inside a container, beside block children | text-type `Block` (`data.text: true`) |
+
+Whole *runs* are wrapped rather than each text node separately, so `Some <a href="#">link</a>
+text` stays one wrapper instead of splitting into three siblings (`INLINE_TAGS` decides what a
+run absorbs). Runs carrying no visible text are left alone, which is what stops the newlines
+between block elements becoming empty text blocks. Shared logic lives in `inline-runs.js`.
+
 The **first** class on an element becomes a real Webflow style block; every remaining class is
 passed through verbatim as a custom `class` attribute so external frameworks (Tailwind) still
 match.
+
+Elements that would paste as **nothing useful are skipped entirely**, because Webflow has no
+"empty" state for them — they arrive as a real node the user then has to delete: an `<img>` with
+no `src` (it would render Webflow's placeholder), and a code tag with nothing to publish
+(`<style></style>`, `<script>  </script>`, a `<link>` with no `href`). A `<script src>` and a
+`<link href>` are empty by nature and are kept — their payload is the attribute.
 
 ---
 
@@ -99,6 +128,15 @@ catastrophically** if you get it wrong. Full detail: `docs/webflow-clipboard-for
    class name (`idFromSeed`) so re-pasting the same HTML is idempotent.
 6. **Whitespace between inline elements is significant.** Trimming text nodes glues words to
    neighbouring `<strong>`/`<em>`/`<a>`.
+7. **A native Image's `src` is rewritten onto Webflow's CDN at PUBLISH**, keeping only the path,
+   so an external URL renders perfectly on the canvas and 404s on the live site. There is no
+   warning anywhere in the Designer. The rewrite belongs to the Image element *type* — a Custom
+   Element publishes its `src` untouched — so only `cdn.prod.website-files.com` URLs are safe as
+   native Images and everything else stays a Custom Element.
+8. **An Image needs `data.img = { id: "" }` to keep its `src` on the canvas.** Empty is not the
+   same as absent: omitting `data.img`, or giving a real asset id, both swap in the placeholder.
+9. **Verifying on the canvas is not verifying.** Anything URL-shaped has to be published and
+   loaded live — rule 7 passed every possible in-Designer check.
 
 ---
 
@@ -140,10 +178,28 @@ extension or Designer Extension), which is a different product shape.
   comments and all.
 - **Unsupported form input types** (`file`, `date`, `range`, `color`, `hidden`) fall back to
   Custom Elements — Webflow has no native field for them.
-- **`img` loses Webflow's asset pipeline.** It is emitted as a Custom Element to preserve the
-  external `src`; a native Image would need an uploaded asset id.
-- `data.text` is emitted as `false` on elements containing text. Webflow sometimes writes
-  `true`. Both paste correctly; the trigger is unverified.
+- **An external `img` cannot be a native Image.** Publish rewrites the `src` onto Webflow's CDN
+  (rule 7), so it stays a Custom Element, whose `src` publishes verbatim — confirmed live. The
+  cost is that it is opaque in the Designer: no Image settings panel, no alt-text control.
+- **A Webflow asset URL binds to the real asset.** The asset id lives inside the URL's filename
+  (`…/<siteId>/<assetId>_<name>.jpg`), so `data.img.id` is recovered from the `src` and Webflow
+  generates the full responsive `srcset` — no `assets[]` descriptor needed. If the id does not
+  resolve on the target site it degrades to the unbound case rather than breaking.
+- **A native Image with no recoverable asset id** (`data.img.id` is `""`) still renders, but
+  Webflow builds no `srcset`, and the Settings panel's image chip reads "placeholder.svg,
+  140x140px" beside a correctly rendering picture. *Choose Image…* binds a real asset.
+- **`nativeImages` substitutes a placeholder that is itself broken once published.** Webflow's
+  own placeholder URL gets the same rewrite and returns AccessDenied on the live site. That is
+  Webflow doing it to its own asset, and it is the point of the option: an obviously-unset image
+  to replace in the Designer, not something to publish as-is.
+- **`data.text` is `true` when the content is a text FLOW** — text plus any inline formatting
+  (`INLINE_TAGS`). Only a block-level child makes the element a container again. On a `Block`
+  this is what turns it into a text element: the Navigator labels it with its own text instead
+  of "Div Block", and the Settings panel grows a *Text* field. A `Link` in that flow also drops
+  to `data.block: ""`, so it publishes as a plain inline link rather than `w-inline-block`.
+  Deliberate deviation: Webflow **omits** the key entirely on a `Paragraph` holding text, while
+  this converter writes `true` there too. Verified harmless by pasting — one rule for every type
+  is easier to reason about than a per-type table — but that is why the two payloads differ.
 
 ---
 

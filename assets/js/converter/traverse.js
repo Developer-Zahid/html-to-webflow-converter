@@ -1,8 +1,10 @@
-import { EMBED_TAGS } from "../config/constants.js";
+import { EMBED_TAGS, FALLBACK_NODE_TYPE } from "../config/constants.js";
 import { resolveElementStyling } from "./element-styles.js";
 import { createFormBuilder } from "./form.js";
 import { newId } from "./ids.js";
-import { createElementNode, createEmbedNode, createTextNode, mapNodeType } from "./nodes.js";
+import { resolveImage } from "./images.js";
+import { carriesText, groupInlineRuns, hasBlockChild, relaxLinksInTextFlow } from "./inline-runs.js";
+import { createElementNode, createEmbedNode, createTextBlockNode, createTextNode, mapNodeType } from "./nodes.js";
 
 /**
  * Walks a parsed DOM and flattens it into the payload's `nodes` array.
@@ -19,6 +21,27 @@ import { createElementNode, createEmbedNode, createTextNode, mapNodeType } from 
  *   node produced nothing (whitespace, a comment, an empty image, a consumed label, a <style>
  *   whose rules all became native styles, a code tag claimed by the collector).
  */
+/**
+ * Whether a code tag carries anything Webflow could publish.
+ *
+ * An empty <style></style> or <script></script> renders nothing, but it still pastes as a real
+ * Code Embed that clutters the Navigator and has to be deleted by hand.
+ *
+ * External references must NOT be caught by this - they are empty BY NATURE and carry their
+ * payload in an attribute instead: a <script src> and a <link href> are the whole point of those
+ * tags. Attributes alone are not enough either, though: a <style media="print"></style> with no
+ * rules still does nothing.
+ *
+ * Emptiness is measured with innerHTML rather than textContent because <noscript> holds MARKUP -
+ * `<noscript><img src="x.gif"></noscript>` has no text at all but is not empty. For <style> and
+ * <script>, which are raw-text elements, the two are the same string.
+ */
+const carriesCode = (element) => {
+	if (element.tagName === "SCRIPT" && element.getAttribute("src")?.trim()) return true;
+	if (element.tagName === "LINK") return Boolean(element.getAttribute("href")?.trim());
+	return Boolean(element.innerHTML?.trim());
+};
+
 export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = new Map(), embedCollector = null }) => {
 	// Labels swallowed into a checkbox/radio wrapper must not be emitted again by the walk.
 	const consumed = new WeakSet();
@@ -31,6 +54,28 @@ export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = 
 		consumed,
 		traverseChild: (child) => traverse(child, true),
 	});
+
+	/**
+	 * Wrap one run of loose text in a text-type Div Block.
+	 * @returns {string|null} the block's id, or null when the run produced nothing
+	 */
+	const buildTextBlock = (run, insideForm) => {
+		const blockId = newId();
+		const block = createTextBlockNode(blockId);
+		nodes.push(block); // parent before children, same as the element walk
+
+		run.forEach((child) => {
+			const childId = traverse(child, insideForm);
+			if (childId) block.children.push(childId);
+		});
+
+		if (block.children.length === 0) {
+			nodes.pop();
+			return null;
+		}
+		relaxLinksInTextFlow(nodes, block.children);
+		return blockId;
+	};
 
 	const traverse = (node, insideForm = false) => {
 		if (node.nodeType === Node.TEXT_NODE) {
@@ -59,6 +104,9 @@ export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = 
 		// <style>/<script>/<link> become a Code Embed carrying their source verbatim. Returns
 		// before the child walk so the CSS/JS text isn't emitted as a text node.
 		if (EMBED_TAGS.includes(node.tagName)) {
+			// Nothing to publish - skip it rather than paste an empty Code Embed.
+			if (!carriesCode(node)) return null;
+
 			// Rules that became native Webflow styles are stripped from the embed. If the whole
 			// block was adopted there is nothing left to embed, so drop the element entirely.
 			let source = node;
@@ -107,17 +155,61 @@ export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = 
 		}
 
 		const id = newId();
-		const wfType = mapNodeType(node.tagName);
-		const { classIds, otherClasses } = resolveElementStyling(node, styles);
+		let element = node;
+		let wfType = mapNodeType(node.tagName);
 
-		const wfNode = createElementNode(id, node, wfType, classIds, otherClasses);
+		// An <img> is native or not depending on its SRC, not just its tag - see images.js. A
+		// substituted src is written onto a shallow clone so the parsed document stays untouched.
+		if (node.tagName === "IMG") {
+			const image = resolveImage(node, options);
+			wfType = image.native ? "Image" : FALLBACK_NODE_TYPE;
+			if (image.src !== node.getAttribute("src")) {
+				element = node.cloneNode(false);
+				element.setAttribute("src", image.src);
+			}
+		}
+
+		const { classIds, otherClasses } = resolveElementStyling(element, styles);
+
+		const wfNode = createElementNode(id, element, wfType, classIds, otherClasses);
 
 		// Push the parent FIRST so it appears before its children in the flat array.
 		nodes.push(wfNode);
 
-		Array.from(node.childNodes).forEach((child) => {
-			const childId = traverse(child, insideForm);
-			if (childId) wfNode.children.push(childId);
+		const sourceChildren = Array.from(node.childNodes);
+
+		// `data.text` marks an element whose content is a TEXT FLOW - it is what puts the "Text"
+		// field in a Div Block's Settings panel and makes the Navigator label it with its own
+		// words instead of "Div Block".
+		//
+		// Inline children do NOT break it: Webflow's own payload for a div reading
+		// "This is some text inside of a div block." carries text:true while holding <code>,
+		// <em>, <sup>, <strong>, <span> and <a> children. Only a BLOCK-level child makes the
+		// element a container again. Requiring at least one direct text node is the conservative
+		// half of the rule - a div holding nothing but a <span> is not covered by that payload.
+		if (!hasBlockChild(sourceChildren) && carriesText(sourceChildren)) {
+			sourceChildren.forEach((child) => {
+				const childId = traverse(child, insideForm);
+				if (childId) wfNode.children.push(childId);
+			});
+			wfNode.data.text = true;
+			relaxLinksInTextFlow(nodes, wfNode.children);
+			return id;
+		}
+
+		// A container. Text loose among block siblings cannot stay a direct child - the container
+		// publishes elements, and a text node is not one - so each run of it gets its own
+		// text-type Div Block.
+		groupInlineRuns(sourceChildren).forEach((group) => {
+			if (group.inline && carriesText(group.nodes)) {
+				const textBlockId = buildTextBlock(group.nodes, insideForm);
+				if (textBlockId) wfNode.children.push(textBlockId);
+				return;
+			}
+			group.nodes.forEach((child) => {
+				const childId = traverse(child, insideForm);
+				if (childId) wfNode.children.push(childId);
+			});
 		});
 
 		return id;

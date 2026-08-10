@@ -5,109 +5,167 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HTML to Webflow Converter</title>
   <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
+    /*
+      THE colour palette. Every colour in the app resolves back to one of these, so a change
+      here is the whole change - there are no hex values anywhere else in the markup or the JS.
+      They are CSS variables rather than plain Tailwind values so that the hand-written
+      scrollbar rules below can read the same source as the utility classes.
+    */
+    :root {
+      --color-canvas: #171717;    /* page background */
+      --color-panel: #2c2c2c;     /* raised surfaces: tab group, buttons */
+      --color-elevated: #3a3a3a;  /* active tab, toggle track, button hover */
+      --color-well: #1a1a1a;      /* recessed surfaces: the JSON output area */
+      --color-line: #363636;      /* every border and divider */
+      --color-accent: #146ef5;    /* Webflow blue - the primary action */
+      --color-accent-hover: #0055d4;
+    }
+
     .custom-scrollbar::-webkit-scrollbar {
       width: 10px;
       height: 10px;
     }
     .custom-scrollbar::-webkit-scrollbar-track {
-      background: #0d1117; 
+      background: var(--color-canvas);
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #30363d; 
+      background: var(--color-line);
       border-radius: 5px;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-      background: #4b5563; 
+      background: var(--color-elevated);
     }
   </style>
+
+  <!--
+    Must run AFTER the CDN script, which is what defines `tailwind`. Names the palette above as
+    utility classes: bg-canvas, border-line, hover:bg-elevated, and so on.
+    NOTE: a var()-valued colour cannot take Tailwind's slash-opacity modifier (`bg-canvas/50`) -
+    use a palette colour where you need that, as the emerald/red text does.
+  -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            canvas: "var(--color-canvas)",
+            panel: "var(--color-panel)",
+            elevated: "var(--color-elevated)",
+            well: "var(--color-well)",
+            line: "var(--color-line)",
+            accent: "var(--color-accent)",
+            "accent-hover": "var(--color-accent-hover)",
+          },
+        },
+      },
+    };
+  </script>
   <!-- type="module" is required for the ES module imports, and implies defer. -->
   <script type="module" src="./assets/js/main.js"></script>
 </head>
-<body class="min-h-screen bg-slate-900 text-slate-200 font-sans p-6">
-  <div class="max-w-7xl mx-auto">
-    
-    <!-- Header -->
-    <header class="mb-8 flex items-center justify-between">
-      <div>
-        <h1 class="text-3xl font-bold text-white flex items-center gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          HTML to Webflow Engine
-        </h1>
-        <p class="text-slate-400 mt-2">
-          Translates raw HTML and inline CSS into Webflow's internal Node structure. (Vanilla JS Version)
+<body class="h-screen bg-canvas text-slate-200 font-sans flex flex-col overflow-hidden">
+
+  <!-- Top bar: title + source tabs -->
+  <header class="flex items-center justify-between px-6 h-16 border-b border-line shrink-0">
+    <h1 class="text-sm font-bold tracking-[0.2em] text-white uppercase">HTML to Webflow</h1>
+
+    <div class="border border-line flex items-center bg-canvas rounded-lg p-1" role="tablist" aria-label="Source language">
+      <button id="tab-html" role="tab" class="px-5 py-1.5 text-sm font-medium rounded-md transition-colors">HTML</button>
+      <button id="tab-css" role="tab" class="px-5 py-1.5 text-sm font-medium rounded-md transition-colors">CSS</button>
+      <button id="tab-js" role="tab" class="px-5 py-1.5 text-sm font-medium rounded-md transition-colors">JS</button>
+    </div>
+  </header>
+
+  <!-- Workspace: editor + sidebar -->
+  <div class="flex flex-1 min-h-0 flex-col lg:flex-row">
+
+    <!-- Editor panes (one per tab, one visible at a time) -->
+    <main class="flex-1 min-h-0 flex flex-col">
+      <textarea id="html-input" class="flex-1 w-full bg-transparent text-slate-300 p-6 font-mono text-sm focus:outline-none resize-none leading-relaxed custom-scrollbar" placeholder="Paste your HTML here..." spellcheck="false"></textarea>
+      <textarea id="css-input" class="hidden flex-1 w-full bg-transparent text-slate-300 p-6 font-mono text-sm focus:outline-none resize-none leading-relaxed custom-scrollbar" placeholder="Paste your CSS here..." spellcheck="false"></textarea>
+      <textarea id="js-input" class="hidden flex-1 w-full bg-transparent text-slate-300 p-6 font-mono text-sm focus:outline-none resize-none leading-relaxed custom-scrollbar" placeholder="Paste your JS here..." spellcheck="false"></textarea>
+    </main>
+
+    <!-- Sidebar -->
+    <aside class="w-full lg:w-96 shrink-0 border-t lg:border-t-0 lg:border-l border-line p-6 flex flex-col gap-6 min-h-0 overflow-y-auto custom-scrollbar">
+
+      <section>
+        <h2 class="flex items-center gap-2 text-sm font-bold tracking-[0.15em] uppercase text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
+          How it works
+        </h2>
+        <p class="text-sm text-slate-400 mt-3 leading-relaxed">
+          This tool converts standard HTML, CSS, and JavaScript into Webflow elements. Paste in
+          your code, click convert, and the Webflow elements will be added to your clipboard.
         </p>
-      </div>
-    </header>
+      </section>
 
-    <!-- Main Workspace -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[75vh]">
-      
-      <!-- Left Column: HTML Input -->
-      <div class="flex flex-col border border-slate-700 rounded-xl overflow-hidden bg-slate-800 shadow-xl">
-        <div class="bg-slate-950 px-4 py-3 flex items-center justify-between border-b border-slate-700">
-          <div class="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400 mr-2"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
-            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Source HTML</h2>
-          </div>
+      <hr class="border-line">
 
-          <div class="flex items-center gap-4">
-            <label for="merge-embeds-toggle" class="flex items-center gap-2 cursor-pointer select-none group" title="Fold every &lt;style&gt; and &lt;link&gt; into one Code Embed and every &lt;script&gt; into another, instead of one embed per tag">
-              <span class="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">Merge Embeds</span>
-              <input type="checkbox" id="merge-embeds-toggle" class="sr-only peer">
-              <span class="relative w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-            </label>
+      <div class="flex items-center gap-3">
+        <button id="copy-btn" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border border-line bg-canvas text-slate-300 hover:bg-elevated hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+          <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <svg id="icon-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span id="copy-text">Copy</span>
+        </button>
 
-            <label for="native-forms-toggle" class="flex items-center gap-2 cursor-pointer select-none group" title="Convert &lt;form&gt; and its fields into native Webflow form elements instead of custom elements">
-              <span class="text-xs font-medium text-slate-400 group-hover:text-slate-200 transition-colors">Native Forms</span>
-              <input type="checkbox" id="native-forms-toggle" class="sr-only peer">
-              <span class="relative w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-            </label>
-          </div>
-        </div>
-        <textarea id="html-input" class="flex-1 w-full bg-slate-800 text-slate-300 p-4 font-mono text-sm focus:outline-none resize-none focus:ring-2 ring-inset ring-blue-500/50 leading-relaxed custom-scrollbar" placeholder="Paste your HTML here..." spellcheck="false"></textarea>
+        <button id="clear-btn" class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border border-line bg-canvas text-slate-300 hover:bg-elevated hover:text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          Clear All
+        </button>
       </div>
 
-      <!-- Right Column: JSON Output -->
-      <div class="flex flex-col border border-slate-700 rounded-xl overflow-hidden bg-[#0d1117] shadow-xl relative">
-        <div class="bg-slate-950 px-4 py-3 flex items-center justify-between border-b border-slate-700">
-          <div class="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-400 mr-2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>
-            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Webflow Node JSON</h2>
-          </div>
-          
-          <button id="copy-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all bg-slate-800 text-slate-300 border border-slate-600 hover:bg-slate-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
-            <svg id="icon-copy" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-            <svg id="icon-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            <span id="copy-text">Copy JSON</span>
-          </button>
-        </div>
-        
-        <div class="flex-1 relative overflow-auto custom-scrollbar">
+      <!-- Conversion options -->
+      <section class="flex flex-col gap-3">
+        <label for="merge-embeds-toggle" class="flex items-center justify-between cursor-pointer select-none group" title="Fold every &lt;style&gt; and &lt;link&gt; into one Code Embed and every &lt;script&gt; into another, instead of one embed per tag">
+          <span class="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Merge Embeds</span>
+          <input type="checkbox" id="merge-embeds-toggle" class="sr-only peer">
+          <span class="relative w-9 h-5 rounded-full bg-elevated peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+        </label>
+
+        <label for="native-images-toggle" class="flex items-center justify-between cursor-pointer select-none group" title="Make every &lt;img&gt; a native Webflow Image. A src that would not survive publish is replaced with Webflow's placeholder, so pick a real asset in the Designer. Off, only images already hosted on Webflow's CDN go native and the rest stay custom elements with their URL intact.">
+          <span class="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Native Images</span>
+          <input type="checkbox" id="native-images-toggle" class="sr-only peer">
+          <span class="relative w-9 h-5 rounded-full bg-elevated peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+        </label>
+
+        <label for="native-forms-toggle" class="flex items-center justify-between cursor-pointer select-none group" title="Convert &lt;form&gt; and its fields into native Webflow form elements instead of custom elements">
+          <span class="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Native Forms</span>
+          <input type="checkbox" id="native-forms-toggle" class="sr-only peer">
+          <span class="relative w-9 h-5 rounded-full bg-elevated peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+        </label>
+      </section>
+
+      <hr class="border-line">
+
+      <!-- Output preview -->
+      <section class="flex-1 min-h-[8rem] flex flex-col">
+        <h2 class="text-xs font-bold tracking-[0.15em] uppercase text-white mb-2">Webflow JSON</h2>
+        <div class="relative flex-1 min-h-0 rounded-lg border border-line bg-well overflow-auto custom-scrollbar">
           <!-- Error State -->
-          <div id="error-state" class="hidden absolute inset-0 flex items-center justify-center p-6 text-red-400 flex-col gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-            <p id="error-message">Failed to parse HTML.</p>
+          <div id="error-state" class="hidden absolute inset-0 flex items-center justify-center p-4 text-red-400 flex-col gap-2 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+            <p id="error-message" class="text-sm">Failed to parse HTML.</p>
           </div>
-          
+
           <!-- Output State -->
-          <pre id="json-output" class="p-4 font-mono text-xs text-emerald-400/90 leading-relaxed"></pre>
+          <pre id="json-output" class="p-3 font-mono text-xs text-emerald-400/90 leading-relaxed"></pre>
         </div>
-      </div>
+      </section>
 
-    </div>
-
-    <!-- Footer info -->
-    <div class="mt-6 text-sm text-slate-500 flex items-center justify-center gap-2">
-      <span>HTML DOM</span>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-      <span>Recursive Parser</span>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-      <span>CSS & Schema Mapping</span>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-      <span>Webflow Clipboard Format</span>
-    </div>
-
+    </aside>
   </div>
+
+  <!-- Convert -->
+  <footer class="px-6 py-4 border-t border-line shrink-0">
+    <button id="convert-btn" class="w-full flex items-center justify-center gap-1.5 rounded-md bg-accent hover:bg-accent-hover active:bg-accent-hover text-white font-semibold text-lg py-4 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+      <!-- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg> -->
+      <svg width="28" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M15.3334 4L11.2916 12H7.49528L9.18675 8.68446H9.11086C7.7154 10.5186 5.63335 11.726 2.66675 12V8.73034C2.66675 8.73034 4.56456 8.61685 5.68023 7.42922H2.66675V4.00006H6.05357V6.8205L6.12959 6.82018L7.51356 4.00006H10.0749V6.80261L10.151 6.80249L11.5869 4H15.3334Z" fill="currentColor"></path></svg>
+      <span id="convert-text">Convert to Webflow</span>
+    </button>
+  </footer>
+
 </body>
 </html>
