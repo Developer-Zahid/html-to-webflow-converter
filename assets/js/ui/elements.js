@@ -5,7 +5,13 @@
 
 const IDS = {
 	htmlInput: "html-input",
+	cssInput: "css-input",
+	jsInput: "js-input",
+	tabHtml: "tab-html",
+	tabCss: "tab-css",
+	tabJs: "tab-js",
 	nativeFormsToggle: "native-forms-toggle",
+	nativeImagesToggle: "native-images-toggle",
 	mergeEmbedsToggle: "merge-embeds-toggle",
 	jsonOutput: "json-output",
 	errorState: "error-state",
@@ -14,6 +20,9 @@ const IDS = {
 	copyText: "copy-text",
 	iconCopy: "icon-copy",
 	iconCheck: "icon-check",
+	clearBtn: "clear-btn",
+	convertBtn: "convert-btn",
+	convertText: "convert-text",
 };
 
 /**

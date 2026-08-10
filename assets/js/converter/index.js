@@ -2,7 +2,8 @@ import { EMBED_TAGS } from "../config/constants.js";
 import { normalizeClassName } from "./class-names.js";
 import { createEmbedCollector } from "./embed-merge.js";
 import { newId } from "./ids.js";
-import { createWrapperNode } from "./nodes.js";
+import { carriesText, groupInlineRuns, relaxLinksInTextFlow } from "./inline-runs.js";
+import { createParagraphNode, createWrapperNode } from "./nodes.js";
 import { collectStylesheets } from "./stylesheet.js";
 import { createStyleRegistry } from "./style-registry.js";
 import { createTraverser } from "./traverse.js";
@@ -50,6 +51,9 @@ const createPayload = (nodes, styles) => ({
  *   Webflow form elements instead of Custom Elements
  * @param {boolean} [options.mergeEmbeds=false]  fold every <style>/<link> into one Code Embed and
  *   every <script> into another, instead of one embed per tag
+ * @param {boolean} [options.nativeImages=false]  make EVERY <img> a native Webflow Image,
+ *   substituting Webflow's placeholder for any src that would not survive publish. Off, only
+ *   Webflow-hosted images go native and the rest stay Custom Elements (see converter/images.js)
  * @returns {object} the payload, ready to be JSON.stringify'd onto the clipboard
  */
 export const convertHtmlToWebflow = (html, options = {}) => {
@@ -84,7 +88,38 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 		.filter((n) => n.nodeType === Node.ELEMENT_NODE && EMBED_TAGS.includes(n.tagName))
 		.forEach(addRoot);
 
-	Array.from(doc.body.childNodes).forEach(addRoot);
+	/**
+	 * A text node is a CHILD-only shape - no `type`, no `tag` - so it cannot be a root. Text
+	 * written at the top level with no tag around it therefore needs a Paragraph, which is what
+	 * that same text would be in a document. (Inside a container the equivalent wrapper is a
+	 * text-type Div Block - see traverse.js.)
+	 *
+	 * Whole RUNS are wrapped rather than each text node on its own, so `Some <a>link</a> text`
+	 * stays one paragraph instead of splitting into three siblings.
+	 */
+	const addParagraphRun = (run) => {
+		const paragraphId = newId();
+		const paragraph = createParagraphNode(paragraphId, []);
+		nodes.push(paragraph); // parent before children, matching the element walk
+		run.forEach((node) => {
+			const childId = traverse(node);
+			if (childId) paragraph.children.push(childId);
+		});
+
+		if (paragraph.children.length === 0) {
+			nodes.pop(); // everything in the run evaporated - drop the empty paragraph
+			return;
+		}
+		relaxLinksInTextFlow(nodes, paragraph.children);
+		rootIds.push(paragraphId);
+	};
+
+	groupInlineRuns(Array.from(doc.body.childNodes)).forEach((group) => {
+		// A run with no actual text is just elements that happen to be inline: a lone <a> or
+		// <strong> is a perfectly good root already and does not want a paragraph around it.
+		if (group.inline && carriesText(group.nodes)) addParagraphRun(group.nodes);
+		else group.nodes.forEach(addRoot);
+	});
 
 	// The merged embeds are built only once every code tag has been seen. They bracket the
 	// content the way a document does - styles ahead of what they style, scripts after the markup
