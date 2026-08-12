@@ -8,13 +8,15 @@ import { WEBFLOW_ASSET_ID_IN_URL, WEBFLOW_ASSET_URL_PREFIX, WEBFLOW_PLACEHOLDER_
  * published Image's src onto its own CDN and keeps only the path. So the canvas shows a working
  * photo while the live site serves a 404, and nothing in the Designer warns you.
  *
- * Hence the rule: a native Image only for a src that is ALREADY on Webflow's CDN, where that
- * rewrite is a no-op. Anything else stays a Custom Element, whose src publishes verbatim -
- * the rewrite is a property of the Image ELEMENT TYPE, not of image URLs in general.
+ * The rewrite is a property of the Image ELEMENT TYPE, not of image URLs in general: a Custom
+ * Element publishes its src verbatim whatever the host. Confirmed on a published page - of nine
+ * images, the only two that loaded were a Webflow-CDN src in a native Image and an external src
+ * in a Custom Element. Every native Image holding a non-Webflow URL was broken.
  *
- * Both halves confirmed on a published page: of nine images, exactly two loaded - a Webflow-CDN
- * src in a native Image, and an external src in a Custom Element. Those are precisely the two
- * things this function emits. Every native Image holding a non-Webflow URL was broken.
+ * So the `nativeImages` option is the whole decision, and OFF is the safe default: every <img>
+ * becomes a Custom Element and keeps its URL, whoever hosts it. Being on Webflow's CDN is not on
+ * its own a reason to force a native Image - a Custom Element renders that src perfectly well,
+ * and staying uniform means the toggle alone predicts the output.
  */
 
 /**
@@ -26,15 +28,17 @@ import { WEBFLOW_ASSET_ID_IN_URL, WEBFLOW_ASSET_URL_PREFIX, WEBFLOW_PLACEHOLDER_
 export const resolveImage = (element, { nativeImages = false } = {}) => {
 	const src = element.getAttribute("src")?.trim() ?? "";
 
-	// Already a Webflow-hosted asset, so the publish rewrite cannot change it.
+	// Off: every image is a Custom Element and keeps its own URL.
+	if (!nativeImages) return { native: false, src };
+
+	// On, and already a Webflow-hosted asset - the publish rewrite is a no-op on its own CDN, so
+	// the URL is safe to keep (and its asset id is recoverable from it, see assetIdForSrc).
 	if (src.startsWith(WEBFLOW_ASSET_URL_PREFIX)) return { native: true, src };
 
-	// "Native Images" is on and this URL cannot survive publish. Swap in Webflow's placeholder:
-	// an obvious "pick an image" marker in the Designer beats one that looks right there and
-	// 404s once the site is live. The author replaces it with a real asset via Choose Image.
-	if (nativeImages) return { native: true, src: WEBFLOW_PLACEHOLDER_IMAGE };
-
-	return { native: false, src };
+	// On, but this URL cannot survive publish. Swap in Webflow's placeholder: an obvious
+	// "pick an image" marker in the Designer beats one that looks right there and 404s once the
+	// site is live. The author replaces it with a real asset via Choose Image.
+	return { native: true, src: WEBFLOW_PLACEHOLDER_IMAGE };
 };
 
 /**

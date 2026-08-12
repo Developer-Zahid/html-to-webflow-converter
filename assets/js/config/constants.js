@@ -160,6 +160,15 @@ export const MERGED_EMBED_NAMES = {
 	js: "JS Code Embed",
 };
 
+/**
+ * Authoring hook: `data-wf-displayName="Hero"` names the element in Webflow's Navigator.
+ *
+ * Stored lowercase because that is what the HTML parser does to attribute names - the source may
+ * spell it in any case. It is a directive to this converter, not content, so it is stripped from
+ * the published attributes rather than passed through.
+ */
+export const DISPLAY_NAME_ATTRIBUTE = "data-wf-displayname";
+
 // Shorthands the Designer struggles with. The browser expands them into longhands for us; these
 // raw shorthand names are then dropped so only the longhands survive.
 export const CSS_SHORTHANDS = ["margin", "padding", "border", "border-radius", "border-width", "border-color", "border-style", "background", "font"];

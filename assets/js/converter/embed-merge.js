@@ -1,4 +1,4 @@
-import { CSS_EMBED_TAGS, JS_EMBED_TAGS, MERGED_EMBED_NAMES } from "../config/constants.js";
+import { CSS_EMBED_TAGS, DISPLAY_NAME_ATTRIBUTE, JS_EMBED_TAGS, MERGED_EMBED_NAMES } from "../config/constants.js";
 import { newId } from "./ids.js";
 import { createMergedEmbedNode } from "./nodes.js";
 
@@ -16,15 +16,30 @@ const CSS_SKELETON = "<style></style>";
 const JS_SKELETON = "<script></script>";
 
 /**
+ * Serialize a tag for the merged embed WITHOUT the display-name hook, which is an instruction to
+ * this converter rather than markup. The merged embeds carry their own fixed Navigator names, so
+ * a per-tag one has nowhere to go and must not be published either.
+ */
+const publishableHtml = (element) => {
+	const clone = element.cloneNode(true);
+	clone.removeAttribute(DISPLAY_NAME_ATTRIBUTE);
+	return clone.outerHTML;
+};
+
+/** Attributes that make a tag worth keeping whole, ignoring the converter's own hook. */
+const publishableAttributeCount = (element) =>
+	Array.from(element.attributes).filter((a) => a.name !== DISPLAY_NAME_ATTRIBUTE).length;
+
+/**
  * A plain <style> hands over its CSS text, so several of them collapse into one <style> tag.
  * Anything else - a <style media="print">, a <link> - keeps its own tag, because its attributes
  * carry meaning that a merge would silently drop.
  */
 const asCssPart = (element) => {
-	if (element.tagName === "STYLE" && element.attributes.length === 0) {
+	if (element.tagName === "STYLE" && publishableAttributeCount(element) === 0) {
 		return { text: (element.textContent ?? "").trim(), mergeable: true };
 	}
-	return { text: element.outerHTML, mergeable: false };
+	return { text: publishableHtml(element), mergeable: false };
 };
 
 /**
@@ -62,7 +77,7 @@ const buildCssContent = (elements) => {
  * redeclaration error, and a syntax error in the first would take the second down with it. One
  * embed holding several <script> tags is still one node in the Navigator, which is the point.
  */
-const buildJsContent = (elements) => elements.map((element) => element.outerHTML).join("\n");
+const buildJsContent = (elements) => elements.map(publishableHtml).join("\n");
 
 export const createEmbedCollector = () => {
 	const buckets = { css: [], js: [] };

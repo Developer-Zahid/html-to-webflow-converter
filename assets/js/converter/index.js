@@ -52,8 +52,8 @@ const createPayload = (nodes, styles) => ({
  * @param {boolean} [options.mergeEmbeds=false]  fold every <style>/<link> into one Code Embed and
  *   every <script> into another, instead of one embed per tag
  * @param {boolean} [options.nativeImages=false]  make EVERY <img> a native Webflow Image,
- *   substituting Webflow's placeholder for any src that would not survive publish. Off, only
- *   Webflow-hosted images go native and the rest stay Custom Elements (see converter/images.js)
+ *   substituting Webflow's placeholder for any src that would not survive publish. Off, EVERY
+ *   <img> stays a Custom Element with its URL intact (see converter/images.js)
  * @returns {object} the payload, ready to be JSON.stringify'd onto the clipboard
  */
 export const convertHtmlToWebflow = (html, options = {}) => {

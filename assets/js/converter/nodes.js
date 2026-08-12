@@ -1,4 +1,4 @@
-import { ALT_DECORATIVE, FALLBACK_NODE_TYPE, IMAGE_ATTRIBUTES, IMAGE_DEFAULT_LOADING, NODE_TYPE_MAP, TYPES_WITH_DATA_TAG } from "../config/constants.js";
+import { ALT_DECORATIVE, DISPLAY_NAME_ATTRIBUTE, FALLBACK_NODE_TYPE, IMAGE_ATTRIBUTES, IMAGE_DEFAULT_LOADING, NODE_TYPE_MAP, TYPES_WITH_DATA_TAG } from "../config/constants.js";
 import { assetIdForSrc } from "./images.js";
 
 /**
@@ -15,7 +15,7 @@ const emptyVisibility = () => ({ conditions: [], keepInHtml: { tag: "False", val
  * somewhere Webflow renders from. Duplicating them there either fights with the native value or
  * emits the attribute twice.
  */
-const RESERVED_ATTRIBUTES = ["class", "style", "id"];
+const RESERVED_ATTRIBUTES = ["class", "style", "id", DISPLAY_NAME_ATTRIBUTE];
 
 /** Per-type additions to the reserved list. */
 const NATIVELY_MAPPED_ATTRIBUTES = {
@@ -72,10 +72,23 @@ const embedNode = (id, skeleton, code) => ({
 	},
 });
 
-export const createEmbedNode = (id, element, codeOverride) =>
-	// `codeOverride` lets a <style> embed carry only the rules that could not become native
+export const createEmbedNode = (id, element, contentElement = element) => {
+	// `contentElement` lets a <style> embed carry only the rules that could not become native
 	// Webflow styles, while `v` still comes from the real element so its attributes survive.
-	embedNode(id, element.cloneNode(false).outerHTML, codeOverride ?? element.outerHTML);
+	//
+	// Both are serialized from copies with the display-name attribute removed: it is an
+	// instruction to this converter, and leaving it in would publish it as real markup.
+	const skeleton = element.cloneNode(false);
+	skeleton.removeAttribute(DISPLAY_NAME_ATTRIBUTE);
+	const content = contentElement.cloneNode(true);
+	content.removeAttribute(DISPLAY_NAME_ATTRIBUTE);
+
+	const node = embedNode(id, skeleton.outerHTML, content.outerHTML);
+
+	const displayName = element.getAttribute(DISPLAY_NAME_ATTRIBUTE)?.trim();
+	if (displayName) node.meta = { displayName };
+	return node;
+};
 
 /**
  * One Code Embed standing in for every <style>/<link> or every <script> on the page
@@ -184,8 +197,9 @@ export const createElementNode = (id, element, wfType, classIds, otherClasses) =
 			visibility: emptyVisibility(),
 		};
 		Array.from(element.attributes).forEach((attr) => {
-			// style and class are handled by the style engine, everything else maps straight over.
-			if (attr.name !== "style" && attr.name !== "class") {
+			// style and class are handled by the style engine, the display-name hook is a converter
+			// directive rather than markup, and everything else maps straight over.
+			if (attr.name !== "style" && attr.name !== "class" && attr.name !== DISPLAY_NAME_ATTRIBUTE) {
 				node.data.attributes.push({ name: attr.name, value: attr.value });
 			}
 		});
@@ -209,6 +223,12 @@ export const createElementNode = (id, element, wfType, classIds, otherClasses) =
 			}
 		});
 	}
+
+	// `data-wf-displayName` renames the element in the Navigator. The label is a NODE-level
+	// `meta`, a different key from the `data.displayName` every node already carries - that one
+	// stays "". Works on any element type; the attribute itself is never published.
+	const displayName = element.getAttribute(DISPLAY_NAME_ATTRIBUTE)?.trim();
+	if (displayName) node.meta = { displayName };
 
 	return node;
 };

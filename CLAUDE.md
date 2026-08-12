@@ -53,9 +53,10 @@ convertHtmlToWebflow(html, { nativeForms: true, nativeImages: true, mergeEmbeds:
 - `nativeForms` (default `false`, wired to the "Native Forms" toggle in the UI) — convert
   `<form>` and its fields into native Webflow form elements instead of Custom Elements.
 - `nativeImages` (default `false`, wired to the "Native Images" toggle) — make **every** `<img>`
-  a native Image, substituting Webflow's placeholder for any `src` that would not survive
-  publish. Off, only images already on `cdn.prod.website-files.com` go native and the rest stay
-  Custom Elements with their URL intact. See `converter/images.js`.
+  a native Image: a `src` already on `cdn.prod.website-files.com` is kept and bound to its asset,
+  anything else is replaced with Webflow's placeholder because it would 404 once published. Off,
+  **every** `<img>` stays a Custom Element with its URL intact, whoever hosts it. See
+  `converter/images.js`.
 - `mergeEmbeds` (default `false`, wired to the "Merge Embeds" toggle) — fold every `<style>` and
   `<link>` into a single Code Embed and every `<script>` into another, instead of emitting one
   embed per tag. The two are named "CSS Code Embed" / "JS Code Embed" in the Navigator via a
@@ -77,8 +78,7 @@ Stylesheet adoption (see below) is **always on**, not behind a toggle.
 | `h1`–`h6`, `p`, `a`, `ul`/`ol`, `li`, `strong`/`b`, `em`/`i`, `blockquote` | native types |
 | `code`, `sup`, `sub`, `span` | `InlineCode`, `Superscript`, `Subscript`, `Span` |
 | `br` | `LineBreak` — `data` is only `{ sym: { inst: "LineBreak" } }` |
-| `img` on `cdn.prod.website-files.com` | `Image` (native) |
-| `img` anywhere else | Custom Element — or a placeholder `Image` when `nativeImages` is on |
+| `img` | Custom Element — or a native `Image` when `nativeImages` is on |
 | `style`, `script`, `link`, `noscript` | `HtmlEmbed` (Code Embed) |
 | everything else (`form`, `table`, `svg`, `figcaption`…) | Custom Element (`type: "DOM"`) |
 | `<form>` + fields, when `nativeForms` is on | `FormWrapper` → `FormForm` + Success/Error |
@@ -96,6 +96,12 @@ Whole *runs* are wrapped rather than each text node separately, so `Some <a href
 text` stays one wrapper instead of splitting into three siblings (`INLINE_TAGS` decides what a
 run absorbs). Runs carrying no visible text are left alone, which is what stops the newlines
 between block elements becoming empty text blocks. Shared logic lives in `inline-runs.js`.
+
+**`data-wf-displayName="Hero"` names the element in the Navigator.** It is an instruction to the
+converter, not markup, so it is stripped from the published attributes — including out of a Code
+Embed's own source. Works on every element type and on a per-tag Code Embed; it does NOT apply to
+native form elements (they build their own nodes) or to the two merged embeds, which carry their
+own fixed names. See `DISPLAY_NAME_ATTRIBUTE`.
 
 The **first** class on an element becomes a real Webflow style block; every remaining class is
 passed through verbatim as a custom `class` attribute so external frameworks (Tailwind) still
@@ -172,6 +178,17 @@ correct outcome for a converter; the alternative (plain) would make it invisible
 
 Bridging this would require reading `CssVariablesStore` from inside the Designer (a browser
 extension or Designer Extension), which is a different product shape.
+
+### Components cannot be produced by this app
+
+Copying a Webflow Component gives you its **flattened contents** — no name, no group, no symbol
+id. The only trace is `meta.unlinkedSymbolCount: 1`, and pasting it back makes plain elements.
+Webflow raises a toast saying so: *"For pasting cross-site we had to unlink components."*
+
+So there is nothing to reverse-engineer; the unlinking is deliberate and happens at copy time.
+The converter's job ends at emitting the component's contents — turning those into a Component
+is a Designer action (**Create Component**) or a job for Webflow's component API. Full detail:
+`docs/webflow-clipboard-format.md`.
 
 ### Other gaps
 

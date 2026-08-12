@@ -127,7 +127,7 @@ export const createTraverser = ({ nodes, styles, options = {}, sheetLeftovers = 
 			}
 
 			const embedId = newId();
-			nodes.push(createEmbedNode(embedId, node, source === node ? undefined : source.outerHTML));
+			nodes.push(createEmbedNode(embedId, node, source));
 			return embedId;
 		}
 

@@ -51,6 +51,32 @@ External payloads take Webflow's *cross-site paste* path, which reifies everythi
 subtree. Reproduced with two plain `Block` nodes — nothing to do with embeds or forms. The
 converter wraps multiple roots in a `Block`.
 
+### Components cannot be created from a payload
+
+**The clipboard format has no component representation, so a converter cannot emit one.**
+
+Copying a Webflow Component produces its **flattened contents** and nothing else — no name, no
+group, no symbol id, no reference of any kind. The only trace is a counter in `meta`:
+
+```jsonc
+"meta": { …, "unlinkedSymbolCount": 1, … }   // "a component was stripped on the way out"
+```
+
+Pasting that payload back makes plain elements. Webflow says so itself, in a toast raised on
+paste:
+
+> **Paste** — For pasting cross-site we had to unlink components.
+
+Verified by pasting the clipboard data of an "Example Card" component into a site where that
+very component exists: the result was a `Div Block`, not an instance, and the toast appeared.
+So it is not a matter of finding the right fields — the unlinking is deliberate and happens at
+copy time.
+
+The two real routes to a component both live outside the clipboard: select the pasted elements
+in the Designer and use **Create Component**, or drive Webflow's component API (the Webflow MCP
+exposes component tools). Same shape of limitation as CSS variables in §4 — the identity lives
+inside the target site, and a standalone converter cannot see it.
+
 ### A text node cannot be the root either
 
 `{ "_id": "…", "text": true, "v": "hello" }` is a **child-only** shape — it has no `type` and no
@@ -255,8 +281,13 @@ renders it as an HTML embed instead of showing the "only displays in preview mod
 ```
 
 `meta.displayName` is a **sibling of `data`**, not a key inside it — `data.displayName` stays
-`""` and setting it alone does nothing. Verified live: an embed pasted with the `meta` key shows
-as "CSS Code Embed" in the Navigator, where every other embed shows the generic "Code Embed".
+`""`. Verified live on a Code Embed ("CSS Code Embed" where every other embed shows the generic
+"Code Embed") and again on ordinary elements: a `Block`, a `Heading` and a Custom Element pasted
+with the key each showed their given name in the Navigator, while a sibling without it fell back
+to Webflow's default label. So it is not embed-specific — it works for any node type.
+
+The converter exposes this as the `data-wf-displayName` authoring attribute, which it strips
+before publishing (see `DISPLAY_NAME_ATTRIBUTE`).
 
 ### Image — THE CANVAS LIES ABOUT `src`
 
@@ -281,10 +312,16 @@ Verifying on the canvas is not verifying. **Publish and view the live page.**
 Element (`type: "DOM"`, `data.tag: "img"`) publishes its `src` untouched — Webflow has no Image
 semantics to apply to it.
 
-Hence `converter/images.js`: an `<img>` is a native Image only when its src already starts with
-`https://cdn.prod.website-files.com/`; everything else stays a Custom Element.
+Hence `converter/images.js` treats the `nativeImages` option as the whole decision. **Off** — the
+default — every `<img>` is a Custom Element and keeps its URL, whoever hosts it. **On**, a src
+already on `https://cdn.prod.website-files.com/` is kept (the rewrite is a no-op on its own CDN)
+and everything else becomes the placeholder, because it would 404 live.
 
-Both halves confirmed on one published page. Of nine images, **exactly two loaded**:
+Being on Webflow's CDN is not on its own a reason to force a native Image: a Custom Element
+renders that src perfectly well, and one switch that predicts the whole output beats a rule that
+silently changes element type based on the URL.
+
+Both element types confirmed on one published page. Of nine images, **exactly two loaded**:
 
 | element | src | published |
 | --- | --- | --- |
