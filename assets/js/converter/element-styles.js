@@ -1,4 +1,4 @@
-import { splitClasses } from "./class-names.js";
+import { normalizeClassName, splitClasses } from "./class-names.js";
 import { expandInlineStyles } from "./inline-css.js";
 
 /**
@@ -10,8 +10,16 @@ import { expandInlineStyles } from "./inline-css.js";
 export const resolveElementStyling = (element, styles) => {
 	const { mainClass, otherClasses } = splitClasses(element);
 	const inlineStyle = expandInlineStyles(element.getAttribute("style"));
+
+	// Matched against the stylesheet's `.main.other` rules by their NORMALIZED names, the same
+	// form a Webflow class would take - but the raw token is what stays in the passthrough, so
+	// keep the two lists index-aligned.
+	const normalized = otherClasses.map(normalizeClassName);
+	const { ids, consumed } = styles.resolveClassIds(mainClass, inlineStyle, normalized);
+	const passthrough = otherClasses.filter((_, i) => !consumed.has(normalized[i]));
+
 	return {
-		classIds: styles.resolveClassIds(mainClass, inlineStyle),
-		otherClasses,
+		classIds: ids,
+		otherClasses: passthrough.join(" ") || null,
 	};
 };

@@ -101,6 +101,22 @@ The **first** class on an element becomes a real Webflow style block; every rema
 passed through verbatim as a custom `class` attribute so external frameworks (Tailwind) still
 match.
 
+**Combo classes** (`comb: "&"`, chained as `.base.combo`) come from two places:
+
+- **A `.a.b` rule in a `<style>` block** becomes a real combo style block named `b`, and `b` is
+  then removed from the element's passthrough `class` attribute so it is not applied twice.
+  Pseudo-states and breakpoints work on it (`.card.featured:hover`, `@media … { .card.featured }`)
+  through the same variant machinery as a base class.
+- **Elements sharing a class but differing in inline styles.** The first one seen defines the
+  base; a later one cannot append to that shared block without restyling every sibling, so it
+  gets `.base.cc-variant-2` holding *only* the declarations that differ — numbering from 2,
+  because the base element is variant 1. Identical variants share one combo.
+
+Both live in `converter/style-registry.js`. A `.a.b` rule is only adopted when some element
+actually carries both classes — otherwise it would be stripped from the embed and never
+instantiated, losing the rule. Three-class chains (`.a.b.c`) and descendant selectors have no
+equivalent this converter can build and stay in the embed.
+
 Elements that would paste as **nothing useful are skipped entirely**, because Webflow has no
 "empty" state for them — they arrive as a real node the user then has to delete: an `<img>` with
 no `src` (it would render Webflow's placeholder), and a code tag with nothing to publish

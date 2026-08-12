@@ -1,5 +1,5 @@
 import { EMBED_TAGS } from "../config/constants.js";
-import { normalizeClassName } from "./class-names.js";
+import { normalizeClassName, splitClasses } from "./class-names.js";
 import { createEmbedCollector } from "./embed-merge.js";
 import { newId } from "./ids.js";
 import { carriesText, groupInlineRuns, relaxLinksInTextFlow } from "./inline-runs.js";
@@ -63,12 +63,20 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 	// gets one; the rest ride along as a passthrough `class` attribute, so a <style> rule
 	// targeting one of those cannot be lifted into the Style panel and stays in the embed.
 	const adoptableClasses = new Set();
+	// `"<base> <combo>"` for every pair an element actually carries, so a `.a.b` rule is only
+	// lifted out of the embed when there is something for it to attach to.
+	const adoptableCombos = new Set();
 	doc.querySelectorAll("[class]").forEach((el) => {
-		const name = normalizeClassName(el.classList[0]);
-		if (name) adoptableClasses.add(name);
+		const { mainClass, otherClasses } = splitClasses(el);
+		if (!mainClass) return;
+		adoptableClasses.add(mainClass);
+		otherClasses.forEach((raw) => {
+			const combo = normalizeClassName(raw);
+			if (combo) adoptableCombos.add(`${mainClass} ${combo}`);
+		});
 	});
 
-	const { rulesByClass, leftoverByElement } = collectStylesheets(Array.from(doc.querySelectorAll("style")), adoptableClasses);
+	const { rulesByClass, leftoverByElement } = collectStylesheets(Array.from(doc.querySelectorAll("style")), adoptableClasses, adoptableCombos);
 
 	const nodes = [];
 	const styles = createStyleRegistry({ sheetRules: rulesByClass });

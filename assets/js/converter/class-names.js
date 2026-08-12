@@ -35,12 +35,15 @@ export const normalizeClassName = (raw) => {
  * external stylesheet still matches them - rewriting them to `sm-w-1-2` silently breaks the
  * framework that was supposed to style the element.
  *
- * @returns {{ mainClass: string, otherClasses: string|null }} mainClass is "" when the first
- *   token cannot be a Webflow class (e.g. "!!!"), in which case it stays in the passthrough.
+ * The rest are returned as RAW tokens rather than a joined string: a caller has to be able to
+ * pull individual ones out, because a class the stylesheet described as `.main.other` becomes a
+ * real combo style block instead of passthrough text.
+ *
+ * @returns {{ mainClass: string, otherClasses: string[] }} mainClass is "" when the first token
+ *   cannot be a Webflow class (e.g. "!!!"), in which case it stays in the passthrough.
  */
 export const splitClasses = (element) => {
 	const rawClassList = element.classList ? Array.from(element.classList) : [];
 	const mainClass = rawClassList.length > 0 ? normalizeClassName(rawClassList[0]) : "";
-	const passthrough = (mainClass ? rawClassList.slice(1) : rawClassList).join(" ");
-	return { mainClass, otherClasses: passthrough || null };
+	return { mainClass, otherClasses: mainClass ? rawClassList.slice(1) : rawClassList };
 };

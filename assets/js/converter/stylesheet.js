@@ -55,8 +55,14 @@ const MEDIA_BREAKPOINTS = new Map([
 	["(min-width: 1920px)", "xxl"],
 ]);
 
-/** `.foo` or `.foo:hover` - deliberately nothing more complex. */
-const SIMPLE_CLASS_SELECTOR = /^\.(-?[_a-zA-Z][\w-]*)(?::([a-z-]+))?$/;
+/**
+ * `.foo`, `.foo.bar`, and either with one pseudo-state - deliberately nothing more complex.
+ *
+ * The two-class form is how a Webflow COMBO is written, so `.card.featured` can be lifted into a
+ * combo style block rather than left in the embed. A third class has no Webflow equivalent this
+ * converter can build, so it does not match.
+ */
+const CLASS_CHAIN_SELECTOR = /^\.(-?[_a-zA-Z][\w-]*)(?:\.(-?[_a-zA-Z][\w-]*))?(?::([a-z-]+))?$/;
 
 /**
  * @returns {string|null} the variant prefix for a media condition, or null when the query is not
@@ -185,35 +191,48 @@ const openBlock = (segmentText) => {
 	return { prelude: segmentText.slice(0, open + 1), body: segmentText.slice(open + 1, close) };
 };
 
-/** @returns {{className: string, state: string|null}|null} null when not adoptable */
+/** @returns {{className: string, combo: string|null, state: string|null}|null} null if unadoptable */
 const parseSelector = (selector) => {
-	const match = SIMPLE_CLASS_SELECTOR.exec(selector.trim());
+	const match = CLASS_CHAIN_SELECTOR.exec(selector.trim());
 	if (!match) return null;
 
-	const [, className, pseudo] = match;
+	const [, className, combo, pseudo] = match;
 	if (pseudo && !STATE_SUFFIX[pseudo]) return null;
-	return { className, state: pseudo ? STATE_SUFFIX[pseudo] : null };
+	return { className, combo: combo ?? null, state: pseudo ? STATE_SUFFIX[pseudo] : null };
 };
 
 /**
  * @param {HTMLStyleElement[]} styleElements  every <style> in the parsed document
  * @param {Set<string>} adoptableClasses  normalized names that become Webflow style blocks
+ * @param {Set<string>} [adoptableCombos]  `"<base> <combo>"` pairs that some element actually
+ *   carries. A `.a.b` rule is only adopted when its pair is in here - otherwise the rule would
+ *   be stripped from the embed and then never instantiated, losing it entirely.
  * @returns {{
- *   rulesByClass: Map<string, {base: string, variants: Record<string, {styleLess: string}>}>,
+ *   rulesByClass: Map<string, {
+ *     base: string,
+ *     variants: Record<string, {styleLess: string}>,
+ *     combos: Map<string, {base: string, variants: Record<string, {styleLess: string}>}>
+ *   }>,
  *   leftoverByElement: Map<HTMLStyleElement, string>
  * }}
  */
-export const collectStylesheets = (styleElements, adoptableClasses) => {
+export const collectStylesheets = (styleElements, adoptableClasses, adoptableCombos = new Set()) => {
 	const rulesByClass = new Map();
 	const leftoverByElement = new Map();
 
-	const entryFor = (className) => {
-		if (!rulesByClass.has(className)) rulesByClass.set(className, { base: "", variants: {} });
-		return rulesByClass.get(className);
+	const entryFor = (className, comboName) => {
+		if (!rulesByClass.has(className)) rulesByClass.set(className, { base: "", variants: {}, combos: new Map() });
+		const entry = rulesByClass.get(className);
+		if (!comboName) return entry;
+
+		// A combo keeps its own base/variants; the shape is identical so the same variant keying
+		// works for `.card.featured:hover` and `@media … { .card.featured { … } }`.
+		if (!entry.combos.has(comboName)) entry.combos.set(comboName, { base: "", variants: {} });
+		return entry.combos.get(comboName);
 	};
 
-	const addDeclarations = (className, breakpoint, state, declarations) => {
-		const entry = entryFor(className);
+	const addDeclarations = (className, comboName, breakpoint, state, declarations) => {
+		const entry = entryFor(className, comboName);
 		if (breakpoint === BASE_BREAKPOINT && !state) {
 			entry.base = [entry.base, declarations].filter(Boolean).join(" ");
 			return;
@@ -235,12 +254,14 @@ export const collectStylesheets = (styleElements, adoptableClasses) => {
 		if (rule.type !== CSSRule.STYLE_RULE) return false;
 
 		const parsed = rule.selectorText.split(",").map(parseSelector);
-		if (!parsed.every((p) => p && adoptableClasses.has(p.className))) return false;
+		const usable = (p) =>
+			p && adoptableClasses.has(p.className) && (!p.combo || adoptableCombos.has(`${p.className} ${p.combo}`));
+		if (!parsed.every(usable)) return false;
 
 		const declarations = expandInlineStyles(rule.style.cssText);
 		if (!declarations) return false;
 
-		parsed.forEach((p) => addDeclarations(p.className, breakpoint, p.state, declarations));
+		parsed.forEach((p) => addDeclarations(p.className, p.combo, breakpoint, p.state, declarations));
 		return true;
 	};
 

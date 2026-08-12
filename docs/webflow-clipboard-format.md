@@ -151,6 +151,40 @@ Inside a text flow that is wrong — Webflow writes `block: ""` there, giving a 
 `display: inline` link. The difference is real: an inline-block link will not wrap mid-phrase and
 sits on a different baseline.
 
+### Combo classes: `comb: "&"` plus a parent link
+
+A combo class is one that only applies chained onto another, as `.base.cc-variant-2`. Two fields
+make it, and BOTH are needed:
+
+```jsonc
+// the base
+{ "_id": "52fe…", "name": "new-test-card", "comb": "",
+  "children": ["3e62…"],                    // <- names its combos
+  "styleLess": "…the shared declarations…" }
+
+// the combo
+{ "_id": "3e62…", "name": "cc-variant-2", "comb": "&",
+  "children": [],
+  "styleLess": "border-top-color: red; …" } // <- ONLY what differs
+```
+
+The element then lists both ids in `classes`, base first. The combo carries only the differing
+declarations — everything shared keeps coming from the base, which is the whole point.
+
+**A combo can add but never unset.** A property the base sets and the variant does not will keep
+applying; there is no way to express its absence through a chained class.
+
+**The same combo NAME under two different bases is two different style blocks.** Verified by
+pasting `.dualbase-alpha.cc-variant-2` (color) and `.dualbase-beta.cc-variant-2` (opacity)
+together: each applied only to its own base, with no bleed. So the ids must be distinct — this
+converter seeds them from `combo:<base>:<name>` rather than the name alone.
+
+**A Custom Element gets its combo too.** `type: "DOM"` publishes the `class` *attribute* only
+from `data.attributes` (see below), but the `classes` array of style ids is honoured for every
+type — verified with a `<figcaption class="domchk hi">`, which picked up the combo's
+`font-weight`. So a class consumed into a combo must NOT also be left in `data.attributes`, or
+it is applied twice.
+
 ### `class` lives in two different places
 
 | Element | `class` publishes from |
