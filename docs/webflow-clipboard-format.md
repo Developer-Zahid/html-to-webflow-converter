@@ -516,6 +516,41 @@ element with every UI-settable style applied. **It is deliberately conservative*
 failure modes are asymmetric: omitting a property just moves it to Custom properties (visible,
 editable, correct CSS), whereas wrongly including one makes it vanish from the UI.
 
+### Custom properties has its OWN allowlist — `@raw` is not universal
+
+The third row of that table is not quite true. *Custom properties* will not render a row for
+just any property: the section has an allowlist of its own, and a property outside it is stored
+in `styleLess` and renders on the canvas while the panel shows **nothing at all** — the exact
+failure `@raw` exists to prevent.
+
+Measured by pasting probe elements carrying 41 declarations and reading back what the panel did
+with each:
+
+| landed | how |
+| --- | --- |
+| `border`, `border-radius`, `animation`, `font`, `flex`, `gap`, `inset`, `list-style`, `text-decoration`, `outline`, `columns`, `margin`, `padding`, `place-items`, `grid-area`, `mask`, `border-image`, `flex-flow`, `overflow`, `grid-template`, `border-width`, `border-color`, `border-style`, `transform`, `filter`, `backdrop-filter`, `box-shadow`, `text-shadow`, `grid-template-columns`, `grid-template-rows`, `background-color` | a *Custom properties* row |
+| `background-image`, `background-size`, `background-position`, `background-repeat`, `background-attachment` | adopted into the **Backgrounds** section |
+| `transition-property` / `-duration` / `-timing-function` / `-delay` | collapsed into one `transition` row |
+| **`background`**, **`transition`** | **nowhere — invisible** |
+
+The two that vanish are the shorthands Webflow models as a **list built from the longhands**
+(background layers; the transition list), so the shorthand itself has no slot. It matches what
+the Designer's own autocomplete offers: typing `background` suggests `background-color`,
+`background-clip`, `background-blend-mode`… but never `background`.
+
+They live in `EMBED_ONLY_PROPERTIES`, and the converter leaves them in the Code Embed as CSS
+(see `collectStylesheets` — the selector is still all-or-nothing, but the declarations are not).
+Only reachable via the pending-substitution passthrough below: without a `var()` the CSSOM
+expands both into longhands, which are fine.
+
+Reading the panel back is awkward — its rows live in a shadow root, so `querySelectorAll` from
+the page finds nothing. Screenshot the panel, or diff against `styleLess`:
+
+```js
+_webflow.getStoreState('StyleBlockStore').styleBlocks.toArray()
+  .find(b => b.get('name') === 'my-class').get('styleLess')
+```
+
 ### CSSOM normalization traps
 
 Two separate problems, both caused by leaning on the browser's CSS parser.
@@ -534,6 +569,36 @@ hands back to a Code Embed: the user still has to read and maintain it. So `styl
 slices leftover rules out of the **original source** with its own top-level splitter and uses
 the CSSOM only to *classify* them. The splitter has to skip comments and strings before
 counting braces — `content: "}"` is legal CSS.
+
+**A shorthand containing `var()` cannot be expanded at all.** This is the worst of the three,
+because it loses the declaration outright rather than mangling it:
+
+```js
+el.style.cssText = "background: linear-gradient(160deg, var(--bg), #0d0d18)";
+el.style.length                                 // 9  - every background longhand is listed
+el.style.getPropertyValue("background-image")   // ""  <- ALL of them are empty
+el.style.getPropertyValue("background")         // the original value, intact
+```
+
+CSS calls this **pending substitution**: a shorthand whose value contains `var()` cannot be
+split into longhands until the variable is resolved, so the CSSOM lists the longhands and
+serializes each as `""`. Expanding it emits `background-image: ; background-color: ;` … and the
+element silently loses its background. `border: 1px solid var(--x)` and
+`border-radius: var(--r)` fail the same way.
+
+A **longhand** holding `var()` is fine (`color: var(--text)` round-trips), which is how to tell
+the two apart: the pending-substitution shorthand is the one that does NOT appear in the
+`el.style` listing. `expandInlineStyles` re-emits those as authored.
+
+Two rules follow, and both matter on their own:
+
+- **Never emit an empty value.** `prop: ;` is not a faithful declaration, it is a broken one.
+- **One authored shorthand should not become eleven entries.** `animation: float-y 7s ease-in-out
+  infinite` expands to eleven longhands including `animation-timeline` and `animation-range-end`,
+  none of which Webflow has a control for, so they all land in Custom properties. It round-trips
+  losslessly, so it is emitted whole. `transition` deliberately does **not** get this treatment:
+  its round trip *drops the timing function* (`transform .25s ease` → `transform 0.25s`), and its
+  longhands are panel-backed anyway.
 
 **Property-level disagreements** with Webflow that silently push values into Custom properties.
 Handled via `PREFERRED_SHORTHANDS` and `PROPERTY_ALIASES`:

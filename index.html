@@ -140,6 +140,27 @@
 
       <hr class="border-line">
 
+      <!-- Naming conventions -->
+      <section class="flex flex-col gap-4">
+        <h2 class="text-xs font-bold tracking-[0.15em] uppercase text-slate-500">Class name patterns</h2>
+
+        <label class="flex flex-col gap-1.5" title="One glob per line, e.g. cc-* or is-*. A class matching one of these becomes a Webflow combo class chained onto the base, even when no .base.combo CSS rule exists.">
+          <span class="text-sm text-slate-400">Combo classes</span>
+          <textarea id="combo-patterns-input" rows="3" spellcheck="false"
+            class="w-full rounded-lg border border-line bg-well text-slate-300 p-2.5 font-mono text-xs leading-relaxed resize-y focus:outline-none focus:border-accent custom-scrollbar"
+            placeholder="cc-*&#10;is-*"></textarea>
+        </label>
+
+        <label class="flex flex-col gap-1.5" title="One glob per line, e.g. u-* or text-*. A class matching one of these always stays a plain passthrough class attribute - never a Webflow style block, never a combo. Takes precedence over the combo list.">
+          <span class="text-sm text-slate-400">Utility classes</span>
+          <textarea id="utility-patterns-input" rows="3" spellcheck="false"
+            class="w-full rounded-lg border border-line bg-well text-slate-300 p-2.5 font-mono text-xs leading-relaxed resize-y focus:outline-none focus:border-accent custom-scrollbar"
+            placeholder="u-*&#10;text-*&#10;sm:*"></textarea>
+        </label>
+      </section>
+
+      <hr class="border-line">
+
       <!-- Output preview -->
       <section class="flex-1 min-h-[8rem] flex flex-col">
         <h2 class="text-xs font-bold tracking-[0.15em] uppercase text-white mb-2">Webflow JSON</h2>

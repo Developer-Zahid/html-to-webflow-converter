@@ -1,5 +1,6 @@
 import { EMBED_TAGS } from "../config/constants.js";
 import { normalizeClassName, splitClasses } from "./class-names.js";
+import { compilePatterns, matchesAny } from "./class-patterns.js";
 import { createEmbedCollector } from "./embed-merge.js";
 import { newId } from "./ids.js";
 import { carriesText, groupInlineRuns, relaxLinksInTextFlow } from "./inline-runs.js";
@@ -54,6 +55,10 @@ const createPayload = (nodes, styles) => ({
  * @param {boolean} [options.nativeImages=false]  make EVERY <img> a native Webflow Image,
  *   substituting Webflow's placeholder for any src that would not survive publish. Off, EVERY
  *   <img> stays a Custom Element with its URL intact (see converter/images.js)
+ * @param {string} [options.comboClassPatterns]  newline/comma separated globs (`cc-*`, `is-*`);
+ *   a class matching one becomes a Webflow combo class even with no `.base.combo` CSS rule
+ * @param {string} [options.utilityClassPatterns]  the same, for classes that must always stay
+ *   passthrough text (`u-*`, `text-*`). Wins over the combo list. See converter/class-patterns.js
  * @returns {object} the payload, ready to be JSON.stringify'd onto the clipboard
  */
 export const convertHtmlToWebflow = (html, options = {}) => {
@@ -62,15 +67,24 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 	// Which class names will become real Webflow style blocks. Only the FIRST class on an element
 	// gets one; the rest ride along as a passthrough `class` attribute, so a <style> rule
 	// targeting one of those cannot be lifted into the Style panel and stays in the embed.
+	// The author's naming conventions, if they gave any: which class names mean "combo" and which
+	// mean "utility". Empty lists are no opinion, and behave exactly as before.
+	const comboPatterns = compilePatterns(options.comboClassPatterns);
+	const utilityPatterns = compilePatterns(options.utilityClassPatterns);
+	const isUtilityClass = (raw) => matchesAny(raw, utilityPatterns);
+
 	const adoptableClasses = new Set();
 	// `"<base> <combo>"` for every pair an element actually carries, so a `.a.b` rule is only
 	// lifted out of the embed when there is something for it to attach to.
 	const adoptableCombos = new Set();
 	doc.querySelectorAll("[class]").forEach((el) => {
-		const { mainClass, otherClasses } = splitClasses(el);
+		const { mainClass, otherClasses } = splitClasses(el, isUtilityClass);
 		if (!mainClass) return;
 		adoptableClasses.add(mainClass);
 		otherClasses.forEach((raw) => {
+			// A utility keeps its own styling from its own framework; adopting `.card.u-mb-4` out
+			// of the embed would strip the rule that every OTHER `u-mb-4` still depends on.
+			if (isUtilityClass(raw)) return;
 			const combo = normalizeClassName(raw);
 			if (combo) adoptableCombos.add(`${mainClass} ${combo}`);
 		});
@@ -79,7 +93,7 @@ export const convertHtmlToWebflow = (html, options = {}) => {
 	const { rulesByClass, leftoverByElement } = collectStylesheets(Array.from(doc.querySelectorAll("style")), adoptableClasses, adoptableCombos);
 
 	const nodes = [];
-	const styles = createStyleRegistry({ sheetRules: rulesByClass });
+	const styles = createStyleRegistry({ sheetRules: rulesByClass, comboPatterns, utilityPatterns });
 	const embedCollector = options.mergeEmbeds ? createEmbedCollector() : null;
 	const traverse = createTraverser({ nodes, styles, options, sheetLeftovers: leftoverByElement, embedCollector });
 

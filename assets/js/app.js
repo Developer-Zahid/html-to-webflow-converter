@@ -47,6 +47,8 @@ export const initApp = () => {
 				nativeForms: els.nativeFormsToggle.checked,
 				nativeImages: els.nativeImagesToggle.checked,
 				mergeEmbeds: els.mergeEmbedsToggle.checked,
+				comboClassPatterns: els.comboPatternsInput.value,
+				utilityClassPatterns: els.utilityPatternsInput.value,
 			});
 			currentJson = JSON.stringify(payload, null, 2);
 			view.renderJson(currentJson);
@@ -65,6 +67,9 @@ export const initApp = () => {
 	els.htmlInput.addEventListener("input", convertSoon);
 	els.cssInput.addEventListener("input", convertSoon);
 	els.jsInput.addEventListener("input", convertSoon);
+	// Debounced like the editors - these are typed into, not toggled.
+	els.comboPatternsInput.addEventListener("input", convertSoon);
+	els.utilityPatternsInput.addEventListener("input", convertSoon);
 
 	// Flipping a conversion option re-runs immediately - there is nothing to debounce.
 	els.nativeFormsToggle.addEventListener("change", convert);

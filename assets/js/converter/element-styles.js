@@ -8,18 +8,17 @@ import { expandInlineStyles } from "./inline-css.js";
  * class and inline-style treatment as everything else.
  */
 export const resolveElementStyling = (element, styles) => {
-	const { mainClass, otherClasses } = splitClasses(element);
+	const { mainClass, otherClasses } = splitClasses(element, styles.isUtilityClass);
 	const inlineStyle = expandInlineStyles(element.getAttribute("style"));
 
-	// Matched against the stylesheet's `.main.other` rules by their NORMALIZED names, the same
-	// form a Webflow class would take - but the raw token is what stays in the passthrough, so
-	// keep the two lists index-aligned.
-	const normalized = otherClasses.map(normalizeClassName);
-	const { ids, consumed } = styles.resolveClassIds(mainClass, inlineStyle, normalized);
-	const passthrough = otherClasses.filter((_, i) => !consumed.has(normalized[i]));
+	// Both forms travel together: patterns are tested against the RAW token the author wrote,
+	// stylesheet combos are keyed by the NORMALIZED name, and the raw token is what goes back
+	// into the passthrough attribute.
+	const others = otherClasses.map((raw) => ({ raw, name: normalizeClassName(raw) }));
+	const { ids, consumed } = styles.resolveClassIds(mainClass, inlineStyle, others);
 
 	return {
 		classIds: ids,
-		otherClasses: passthrough.join(" ") || null,
+		otherClasses: others.filter((o) => !consumed.has(o.name)).map((o) => o.raw).join(" ") || null,
 	};
 };

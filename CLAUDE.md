@@ -31,6 +31,7 @@ assets/js/
     inline-css.js               declaration serialization (shorthands, @raw wrapping)
     element-styles.js           shared "classes + passthrough class attr" helper
     class-names.js              Webflow class-name normalization
+    class-patterns.js           user globs: which names mean "combo" / "utility"
     form.js                     native Webflow form subtrees
     ids.js                      newId() + deterministic idFromSeed()
   ui/
@@ -52,6 +53,13 @@ convertHtmlToWebflow(html, { nativeForms: true, nativeImages: true, mergeEmbeds:
 
 - `nativeForms` (default `false`, wired to the "Native Forms" toggle in the UI) — convert
   `<form>` and its fields into native Webflow form elements instead of Custom Elements.
+- `comboClassPatterns` / `utilityClassPatterns` (default `""`, wired to the two "Class name
+  patterns" textareas) — newline- or comma-separated globs where `*` matches anything, telling
+  the converter what a project's naming conventions MEAN. A **combo** match (`cc-*`, `is-*`)
+  becomes a real combo class even with no `.base.combo` rule; a **utility** match (`u-*`,
+  `text-*`) is always left as passthrough text — never a style block, never a combo — and wins
+  over the combo list. Matched against the RAW class token, case-insensitively, so `sm:*` works.
+  Empty means no opinion and behaves exactly as before. See `converter/class-patterns.js`.
 - `nativeImages` (default `false`, wired to the "Native Images" toggle) — make **every** `<img>`
   a native Image: a `src` already on `cdn.prod.website-files.com` is kept and bound to its asset,
   anything else is replaced with Webflow's placeholder because it would 404 once published. Off,
@@ -105,7 +113,9 @@ own fixed names. See `DISPLAY_NAME_ATTRIBUTE`.
 
 The **first** class on an element becomes a real Webflow style block; every remaining class is
 passed through verbatim as a custom `class` attribute so external frameworks (Tailwind) still
-match.
+match. With utility patterns configured it is the first **non-utility** class instead —
+`class="u-flex card"` is a card wearing a utility, not a "u-flex" component — and an element
+whose classes are *all* utilities gets no style block at all.
 
 **Combo classes** (`comb: "&"`, chained as `.base.combo`) come from two places:
 
@@ -117,6 +127,9 @@ match.
   base; a later one cannot append to that shared block without restyling every sibling, so it
   gets `.base.cc-variant-2` holding *only* the declarations that differ — numbering from 2,
   because the base element is variant 1. Identical variants share one combo.
+
+- **A class name matching a combo pattern** the author configured (`cc-*`, `is-*`). No CSS rule
+  needed — the block starts empty, ready to style in the Designer. See below.
 
 Both live in `converter/style-registry.js`. A `.a.b` rule is only adopted when some element
 actually carries both classes — otherwise it would be stripped from the embed and never
@@ -146,19 +159,26 @@ catastrophically** if you get it wrong. Full detail: `docs/webflow-clipboard-for
 4. **`@raw<|value|>`** routes a declaration into the Style panel's *Custom properties* section.
    Needed when the property has no panel control **or** the value doesn't fit one. Written
    plain in either case, the value renders but is **invisible** in the Designer.
-5. **Style blocks are matched by `_id`, not name.** Ids are derived deterministically from the
+5. **`@raw` is not a universal escape hatch — *Custom properties* has an allowlist.** A property
+   outside it is stored, renders and publishes, but the panel draws **no row for it at all**, so
+   it cannot be seen or edited. Probing 41 declarations found exactly two the Designer swallows:
+   the **`background`** and **`transition`** shorthands, both of which Webflow models as a list
+   built from the longhands. Those stay in the Code Embed instead
+   (`EMBED_ONLY_PROPERTIES`).
+6. **Style blocks are matched by `_id`, not name.** Ids are derived deterministically from the
    class name (`idFromSeed`) so re-pasting the same HTML is idempotent.
-6. **Whitespace between inline elements is significant.** Trimming text nodes glues words to
+7. **Whitespace between inline elements is significant.** Trimming text nodes glues words to
    neighbouring `<strong>`/`<em>`/`<a>`.
-7. **A native Image's `src` is rewritten onto Webflow's CDN at PUBLISH**, keeping only the path,
+8. **A native Image's `src` is rewritten onto Webflow's CDN at PUBLISH**, keeping only the path,
    so an external URL renders perfectly on the canvas and 404s on the live site. There is no
    warning anywhere in the Designer. The rewrite belongs to the Image element *type* — a Custom
    Element publishes its `src` untouched — so only `cdn.prod.website-files.com` URLs are safe as
    native Images and everything else stays a Custom Element.
-8. **An Image needs `data.img = { id: "" }` to keep its `src` on the canvas.** Empty is not the
+9. **An Image needs `data.img = { id: "" }` to keep its `src` on the canvas.** Empty is not the
    same as absent: omitting `data.img`, or giving a real asset id, both swap in the placeholder.
-9. **Verifying on the canvas is not verifying.** Anything URL-shaped has to be published and
-   loaded live — rule 7 passed every possible in-Designer check.
+10. **Verifying on the canvas is not verifying.** Anything URL-shaped has to be published and
+    loaded live — rule 8 passed every possible in-Designer check. And "it renders" is not the
+    same as "the user can find it" — rule 5 renders perfectly and is unreachable in the UI.
 
 ---
 
@@ -171,10 +191,37 @@ reference as a **binding to a variable id**, not as CSS text — and those ids l
 target site. A standalone converter cannot see them, so there is no way to produce a real
 binding from HTML alone.
 
-Current behaviour: a panel-backed property whose value contains `var()` is wrapped in
-`@raw<|…|>`, so it lands in *Custom properties* — visible, editable, and the CSS still
-resolves at runtime as long as the variable is defined somewhere on the site. That is the
-correct outcome for a converter; the alternative (plain) would make it invisible in the UI.
+Current behaviour: a property whose value contains `var()` is wrapped in `@raw<|…|>`, so it
+lands in *Custom properties* — visible, editable, and the CSS still resolves at runtime as long
+as the variable is defined somewhere on the site (the `:root` block rides along in the Code
+Embed). That is the correct outcome for a converter; the alternative (plain) would make it
+invisible in the UI.
+
+A `var()` in a **shorthand** is a separate trap: the CSSOM cannot expand it (*pending
+substitution*) and hands back empty longhands, which would drop the declaration entirely. Those
+are re-emitted as authored — see the CSSOM section of `docs/webflow-clipboard-format.md`.
+
+Two of those shorthands, **`background`** and **`transition`**, have nowhere to land: *Custom
+properties* draws no row for them (rule 5), so `@raw` would make them invisible. A **stylesheet**
+rule keeps them in the Code Embed instead, split out of the rule while everything else in the
+same block still goes native:
+
+```css
+.card { background: linear-gradient(160deg, var(--bg), #0d0d18); border-radius: var(--r); }
+```
+```
+styleLess   border-radius: @raw<|var(--r)|>;
+embed       .card { background: linear-gradient(160deg, var(--bg), #0d0d18); }
+```
+
+The embed's `<style>` sits in the body, after Webflow's own stylesheet in `<head>`, so at equal
+specificity the author's declaration is the one that applies. A rule inside an adopted `@media`
+is re-wrapped in that same query, so it still only applies at its breakpoint.
+
+**An inline `style="…"` cannot take that path** — it has no selector, so there is no rule to
+leave the declaration in, and it stays in `styleLess`: rendering and publishing correctly, but
+with no row in the Designer. Rare in practice (it needs a `var()` *inside a shorthand*, in an
+inline attribute), and dropping the style would be worse.
 
 Bridging this would require reading `CssVariablesStore` from inside the Designer (a browser
 extension or Designer Extension), which is a different product shape.

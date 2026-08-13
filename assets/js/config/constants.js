@@ -185,7 +185,47 @@ export const CSS_SHORTHANDS = ["margin", "padding", "border", "border-radius", "
 export const PREFERRED_SHORTHANDS = {
 	overflow: ["overflow-x", "overflow-y"],
 	"white-space": ["white-space-collapse", "text-wrap-mode", "text-wrap-style", "text-wrap"],
+	// Not a Webflow-panel shorthand - Webflow has no animation control at all, so this lands in
+	// Custom properties either way. It is here because the browser explodes ONE authored
+	// `animation:` into ELEVEN longhands, filling the panel with animation-timeline and
+	// animation-range-end noise. The shorthand round-trips losslessly, so one line it is.
+	// NOTE: `transition` deliberately does NOT get the same treatment - its round trip DROPS the
+	// timing function ("transform .25s ease" comes back as "transform 0.25s"), and its longhands
+	// are panel-backed anyway.
+	animation: [
+		"animation-duration",
+		"animation-timing-function",
+		"animation-delay",
+		"animation-iteration-count",
+		"animation-direction",
+		"animation-fill-mode",
+		"animation-play-state",
+		"animation-name",
+		"animation-timeline",
+		"animation-range-start",
+		"animation-range-end",
+	],
 };
+
+/**
+ * Properties the Style panel cannot show AT ALL - not on a control, not even as a Custom
+ * properties row. Written into `styleLess` they still render on the canvas and publish fine, but
+ * they are invisible and uneditable in the Designer, so the converter leaves them in the Code
+ * Embed as CSS instead. That keeps them visible, editable, and applied.
+ *
+ * Established by pasting probe elements carrying 41 different declarations into a live Designer
+ * and reading back what the panel did with each. Every other one landed somewhere the user can
+ * see it - most as a Custom properties row, the `background-*` longhands in the Backgrounds
+ * section, the `transition-*` longhands collapsed into one `transition` row. These two are the
+ * only ones that vanished, and the shape is consistent: both are shorthands Webflow models as a
+ * LIST built from the longhands (background layers, the transition list), so the shorthand itself
+ * has no slot to go in. Matching the user's report that typing `background` into Custom
+ * properties offers only `background-color`, `background-clip` and friends - never `background`.
+ *
+ * Only reachable via the pending-substitution passthrough in inline-css.js: without a `var()` in
+ * the value the CSSOM expands both into longhands, which are fine.
+ */
+export const EMBED_ONLY_PROPERTIES = ["background", "transition"];
 
 /**
  * Property renames applied after expansion. Webflow's gap control writes the legacy grid names,

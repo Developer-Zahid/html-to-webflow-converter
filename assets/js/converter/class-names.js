@@ -39,11 +39,23 @@ export const normalizeClassName = (raw) => {
  * pull individual ones out, because a class the stylesheet described as `.main.other` becomes a
  * real combo style block instead of passthrough text.
  *
- * @returns {{ mainClass: string, otherClasses: string[] }} mainClass is "" when the first token
- *   cannot be a Webflow class (e.g. "!!!"), in which case it stays in the passthrough.
+ * A class the author declared a UTILITY is never the style block - `class="u-flex card"` is a
+ * card wearing a utility, not a "u-flex" component - so the first NON-utility token wins instead.
+ * With no utility patterns configured this is exactly "the first token", as before.
+ *
+ * @param {Element} element
+ * @param {(raw: string) => boolean} [isUtility]
+ * @returns {{ mainClass: string, otherClasses: string[] }} mainClass is "" when no token can be a
+ *   Webflow class (e.g. "!!!", or every class is a utility); all others stay in the passthrough.
  */
-export const splitClasses = (element) => {
+export const splitClasses = (element, isUtility = () => false) => {
 	const rawClassList = element.classList ? Array.from(element.classList) : [];
-	const mainClass = rawClassList.length > 0 ? normalizeClassName(rawClassList[0]) : "";
-	return { mainClass, otherClasses: mainClass ? rawClassList.slice(1) : rawClassList };
+
+	const mainIndex = rawClassList.findIndex((raw) => !isUtility(raw) && normalizeClassName(raw));
+	if (mainIndex === -1) return { mainClass: "", otherClasses: rawClassList };
+
+	return {
+		mainClass: normalizeClassName(rawClassList[mainIndex]),
+		otherClasses: rawClassList.filter((_, i) => i !== mainIndex),
+	};
 };

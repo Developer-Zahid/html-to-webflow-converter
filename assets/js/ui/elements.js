@@ -13,6 +13,8 @@ const IDS = {
 	nativeFormsToggle: "native-forms-toggle",
 	nativeImagesToggle: "native-images-toggle",
 	mergeEmbedsToggle: "merge-embeds-toggle",
+	comboPatternsInput: "combo-patterns-input",
+	utilityPatternsInput: "utility-patterns-input",
 	jsonOutput: "json-output",
 	errorState: "error-state",
 	errorMessage: "error-message",

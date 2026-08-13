@@ -1,4 +1,5 @@
 import { CREATED_BY } from "../config/constants.js";
+import { matchesAny } from "./class-patterns.js";
 import { idFromSeed } from "./ids.js";
 
 /**
@@ -78,8 +79,12 @@ const declarationsNotIn = (baseStyleLess, variantStyleLess) => {
  * @param {object} [deps]
  * @param {Map<string, {base: string, variants: object}>} [deps.sheetRules]  declarations lifted
  *   out of <style> blocks, keyed by style-block name (see stylesheet.js)
+ * @param {RegExp[]} [deps.comboPatterns]  a class matching one of these becomes a combo even
+ *   with no `.base.combo` rule to fill it - the NAME is the author telling us what it is
+ * @param {RegExp[]} [deps.utilityPatterns]  a class matching one of these is always left as
+ *   passthrough text, never a style block and never a combo. Checked first, so it wins
  */
-export const createStyleRegistry = ({ sheetRules = new Map() } = {}) => {
+export const createStyleRegistry = ({ sheetRules = new Map(), comboPatterns = [], utilityPatterns = [] } = {}) => {
 	/** @type {Map<string, object>} keyed by style-block name */
 	const byName = new Map();
 	/** Inline-style string each named class absorbed, kept separate from the sheet's own rules. */
@@ -148,7 +153,8 @@ export const createStyleRegistry = ({ sheetRules = new Map() } = {}) => {
 	 *
 	 * @param {string} mainClass  normalized style-block name, or "" for none
 	 * @param {string} inlineStyle  expanded styleLess, or "" for none
-	 * @param {string[]} [otherClasses]  the element's remaining classes, normalized
+	 * @param {{raw: string, name: string}[]} [otherClasses]  the element's remaining classes; the
+	 *   RAW token is what patterns are tested against, `name` is its normalized form
 	 * @returns {{ids: string[], consumed: Set<string>}} `ids` is base class first; `consumed`
 	 *   names the other classes that became combo style blocks and so must NOT also be written
 	 *   out as a passthrough `class` attribute
@@ -172,12 +178,17 @@ export const createStyleRegistry = ({ sheetRules = new Map() } = {}) => {
 		}
 		ids.push(byName.get(mainClass)._id);
 
-		// Combos the stylesheet declared as `.main.other`, in the order the element lists them.
+		// Combos, in the order the element lists them. Two ways to qualify: the stylesheet said
+		// `.main.other`, or the author's combo patterns say the NAME means combo - in which case
+		// the block starts empty, ready to be styled in the Designer. A utility never qualifies.
 		const sheetCombos = sheetRules.get(mainClass)?.combos;
-		otherClasses.forEach((name) => {
+		otherClasses.forEach(({ raw, name }) => {
+			if (!name || matchesAny(raw, utilityPatterns)) return;
+
 			const rule = sheetCombos?.get(name);
-			if (!rule) return;
-			ids.push(ensureComboClass(mainClass, name, rule.base, rule.variants));
+			if (!rule && !matchesAny(raw, comboPatterns)) return;
+
+			ids.push(ensureComboClass(mainClass, name, rule?.base ?? "", rule?.variants ?? {}));
 			consumed.add(name);
 		});
 
@@ -194,6 +205,8 @@ export const createStyleRegistry = ({ sheetRules = new Map() } = {}) => {
 	return {
 		resolveClassIds,
 		ensureInlineClass,
+		/** Whether the author declared this raw class name a utility - see splitClasses. */
+		isUtilityClass: (raw) => matchesAny(raw, utilityPatterns),
 		/** The payload's `styles` array. */
 		toArray: () => [...byName.values(), ...comboStyles],
 	};

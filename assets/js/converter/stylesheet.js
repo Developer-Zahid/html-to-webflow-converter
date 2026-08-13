@@ -1,4 +1,4 @@
-import { expandInlineStyles } from "./inline-css.js";
+import { expandRuleStyles } from "./inline-css.js";
 
 /**
  * Splits a <style> block into what Webflow's Style panel can hold natively and what has to stay
@@ -244,25 +244,42 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 		entry.variants[key] = { styleLess: [existing, declarations].filter(Boolean).join(" ") };
 	};
 
+	const NOT_ADOPTED = { adopted: false, leftover: null };
+
 	/**
 	 * Adopt one style rule into the given breakpoint's styles, or report that it cannot be.
-	 * All-or-nothing per rule: a grouped selector is only adopted when every branch of it maps,
-	 * otherwise the rule stays whole in the embed and nothing is silently dropped.
-	 * @returns {boolean} whether the rule was adopted
+	 *
+	 * The SELECTOR is all-or-nothing: a grouped selector is only adopted when every branch of it
+	 * maps, otherwise the rule stays whole in the embed and nothing is silently dropped. Its
+	 * DECLARATIONS are not - a property the Style panel cannot show at all would be invisible in
+	 * the Designer once lifted (see EMBED_ONLY_PROPERTIES), so those stay behind in a rule of their
+	 * own while the rest of the block still goes native.
+	 *
+	 * @returns {{adopted: boolean, leftover: string|null}} `leftover` is CSS the caller must keep
+	 *   in the embed. Unlike every other leftover this one is PRINTED rather than sliced from the
+	 *   source - the rule is being split, so there is no original text for half of it. Only the
+	 *   declarations are reprinted though, and they are reprinted as the author wrote them.
 	 */
 	const tryAdoptStyleRule = (rule, breakpoint) => {
-		if (rule.type !== CSSRule.STYLE_RULE) return false;
+		if (rule.type !== CSSRule.STYLE_RULE) return NOT_ADOPTED;
 
 		const parsed = rule.selectorText.split(",").map(parseSelector);
 		const usable = (p) =>
 			p && adoptableClasses.has(p.className) && (!p.combo || adoptableCombos.has(`${p.className} ${p.combo}`));
-		if (!parsed.every(usable)) return false;
+		if (!parsed.every(usable)) return NOT_ADOPTED;
 
-		const declarations = expandInlineStyles(rule.style.cssText);
-		if (!declarations) return false;
+		const { styleLess, deferred } = expandRuleStyles(rule.style.cssText);
+		if (!styleLess && deferred.length === 0) return NOT_ADOPTED;
 
-		parsed.forEach((p) => addDeclarations(p.className, p.combo, breakpoint, p.state, declarations));
-		return true;
+		// Everything the panel can hold was deferred, so there is nothing to lift - leave the rule
+		// exactly where it is instead of splitting it into an identical copy of itself.
+		if (!styleLess) return NOT_ADOPTED;
+
+		parsed.forEach((p) => addDeclarations(p.className, p.combo, breakpoint, p.state, styleLess));
+		return {
+			adopted: true,
+			leftover: deferred.length > 0 ? `${rule.selectorText} {\n  ${deferred.join(";\n  ")};\n}` : null,
+		};
 	};
 
 	/**
@@ -281,8 +298,15 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 		for (const inner of splitTopLevelSegments(block.body)) {
 			if (inner.isComment) continue;
 			const rule = parseOneRule(inner.text);
-			if (rule && tryAdoptStyleRule(rule, breakpoint)) adopted = true;
-			else keep.push(inner.text);
+			const result = rule ? tryAdoptStyleRule(rule, breakpoint) : NOT_ADOPTED;
+			if (!result.adopted) {
+				keep.push(inner.text);
+				continue;
+			}
+			adopted = true;
+			// Re-wrapped in this block's own @media below, so it keeps applying at this breakpoint
+			// only - exactly where the adopted half of the rule went.
+			if (result.leftover) keep.push(result.leftover);
 		}
 
 		if (!adopted) return { adopted: false, leftover: segmentText };
@@ -318,8 +342,10 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 				}
 			}
 
-			if (rule && tryAdoptStyleRule(rule, BASE_BREAKPOINT)) {
+			const result = rule ? tryAdoptStyleRule(rule, BASE_BREAKPOINT) : NOT_ADOPTED;
+			if (result.adopted) {
 				adoptedAnything = true;
+				if (result.leftover) leftover.push(result.leftover);
 				continue;
 			}
 			leftover.push(segment.text);
