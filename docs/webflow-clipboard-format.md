@@ -551,6 +551,29 @@ _webflow.getStoreState('StyleBlockStore').styleBlocks.toArray()
   .find(b => b.get('name') === 'my-class').get('styleLess')
 ```
 
+### The Grid control cannot read `repeat()`
+
+A control existing for a property is not the same as it understanding every legal value. Pasted
+into a live Designer and read back off the Layout panel:
+
+| `grid-template-columns` | canvas | Grid panel |
+| --- | --- | --- |
+| `repeat(3, 1fr)` | 3 columns | **1 column, 0 rows** |
+| `1fr 1fr 1fr` | 3 columns | 3 columns |
+| `repeat(auto-fill, minmax(200px, 1fr))` | 4 columns | **1 column, 0 rows** |
+
+The misreport is worse than cosmetic: the panel writes back what it thinks it read, so nudging
+the stepper replaces the author's `repeat()` with a single column. Webflow's own grids are
+always serialized as explicit tracks (`1fr minmax(0px, 1fr)`) — it never emits `repeat()`.
+
+So `formatDeclaration` expands a countable `repeat(N, <tracks>)` in place before deciding where
+the declaration goes. That is a pure rewrite — `repeat(3, 1fr)` and `1fr 1fr 1fr` are the same
+computed value — and it applies only to `GRID_TRACK_PROPERTIES`, so a `content: "repeat("`
+string is untouched. What cannot be expanded (`auto-fill`, `auto-fit`, or more tracks than
+`MAX_REPEAT_EXPANSION`) still contains `repeat(`, which `UNREPRESENTABLE_VALUE` now matches, so
+it routes to *Custom properties*: the value stays visible and editable and the Grid stepper is
+greyed out instead of claiming a value it is misreading. Verified live — the auto-fill grid
+still computes `236px 236px 236px 236px` on the canvas from its Custom properties row.
 ### CSSOM normalization traps
 
 Two separate problems, both caused by leaning on the browser's CSS parser.
@@ -588,7 +611,37 @@ element silently loses its background. `border: 1px solid var(--x)` and
 
 A **longhand** holding `var()` is fine (`color: var(--text)` round-trips), which is how to tell
 the two apart: the pending-substitution shorthand is the one that does NOT appear in the
-`el.style` listing. `expandInlineStyles` re-emits those as authored.
+`el.style` listing. `expandDeclarations` re-emits those as authored.
+
+**…and `rule.style.cssText` may not contain the shorthand at all.** The two traps above compose
+into a third that deletes CSS outright. A shorthand whose longhands are *later overridden* in
+the same block cannot be reconstructed, so the CSSOM serializes the longhands individually
+instead — and under pending substitution those are all empty:
+
+```js
+sheet.replaceSync(`.gradient-text {
+  background: linear-gradient(100deg, var(--violet), var(--blue));
+  background-clip: text;          /* <- overrides one of background's longhands */
+}`);
+sheet.cssRules[0].style.cssText
+// "background-image: ; background-position-x: ; … background-clip: text"
+sheet.cssRules[0].style.getPropertyValue("background")   // ""  <- the gradient is GONE
+```
+
+Note the difference from the plain pending-substitution case: there, `getPropertyValue`
+("background") still hands the value back. Here it does not, so there is **nothing** to recover
+from the CSSOM. `tryAdoptStyleRule` therefore feeds the expander the rule's ORIGINAL sliced text
+(`openBlock(sourceText).body`), never `rule.style.cssText`.
+
+**A deferred shorthand cannot always be moved on its own.** The Code Embed's `<style>` is in the
+body, so anything left there lands *after* Webflow's stylesheet in the cascade. Split the rule
+above and `background` would re-run after the adopted `background-clip: text`, resetting it to
+`border-box` — the CSS is all still present and the effect is dead. When the deferred shorthand
+shares a property family with anything else in the rule — `background-clip`, or a prefixed
+`-webkit-background-clip`, which the CSSOM folds into the unprefixed name and would otherwise
+drop — the whole rule stays in the embed (`isEntangled`). Verified live: the pasted element
+computes `background-image: linear-gradient(100deg, rgb(124,92,255), …)`,
+`-webkit-background-clip: text`, `color: rgba(0,0,0,0)`.
 
 Two rules follow, and both matter on their own:
 

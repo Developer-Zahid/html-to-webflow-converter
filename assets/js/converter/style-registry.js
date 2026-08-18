@@ -1,4 +1,5 @@
-import { CREATED_BY } from "../config/constants.js";
+import { CREATED_BY, GENERATED_CLASS_NAMES } from "../config/constants.js";
+import { normalizeClassName } from "./class-names.js";
 import { matchesAny } from "./class-patterns.js";
 import { idFromSeed } from "./ids.js";
 
@@ -99,11 +100,24 @@ export const createStyleRegistry = ({ sheetRules = new Map(), comboPatterns = []
 	const variantNamesByBase = new Map();
 
 	/**
-	 * Auto-generated class for a block of inline CSS. Keyed by the CSS itself, so elements with
-	 * identical inline styles share one class instead of getting one each.
+	 * Auto-generated class for a block of inline CSS.
+	 *
+	 * Named after the element it came from - `heading-2-a1b2c3d4`, `paragraph-a1b2c3d4` - so the
+	 * Style panel's class list says what each one is instead of a wall of `css-*`. The hash keeps
+	 * it unique and deterministic, so re-pasting the same HTML lands on the same class rather than
+	 * piling up duplicates.
+	 *
+	 * Keyed by tag AND css: elements with identical inline styles share one class, but only when
+	 * they are the same kind of element. Two tags sharing a block would leave whichever name lost
+	 * the race describing the other one.
+	 *
+	 * @param {string} tagName  the element's tag, uppercase as the DOM reports it
 	 */
-	const ensureInlineClass = (inlineStyle) => {
-		const name = "css-" + idFromSeed("inline:" + inlineStyle).slice(0, 8);
+	const ensureInlineClass = (inlineStyle, tagName = "") => {
+		// `||` not `??`: normalizeClassName returns "" for a tag with nothing usable in it, and an
+		// empty label would produce a class starting with a hyphen.
+		const label = GENERATED_CLASS_NAMES[tagName] || normalizeClassName(tagName) || "css";
+		const name = `${label}-${idFromSeed(`inline:${tagName}:${inlineStyle}`).slice(0, 8)}`;
 		if (!byName.has(name)) byName.set(name, makeStyle(name, inlineStyle));
 		return byName.get(name)._id;
 	};
@@ -155,16 +169,17 @@ export const createStyleRegistry = ({ sheetRules = new Map(), comboPatterns = []
 	 * @param {string} inlineStyle  expanded styleLess, or "" for none
 	 * @param {{raw: string, name: string}[]} [otherClasses]  the element's remaining classes; the
 	 *   RAW token is what patterns are tested against, `name` is its normalized form
+	 * @param {string} [tagName]  only used to NAME the generated class when there is no mainClass
 	 * @returns {{ids: string[], consumed: Set<string>}} `ids` is base class first; `consumed`
 	 *   names the other classes that became combo style blocks and so must NOT also be written
 	 *   out as a passthrough `class` attribute
 	 */
-	const resolveClassIds = (mainClass, inlineStyle, otherClasses = []) => {
+	const resolveClassIds = (mainClass, inlineStyle, otherClasses = [], tagName = "") => {
 		const ids = [];
 		const consumed = new Set();
 
 		if (!mainClass) {
-			if (inlineStyle) ids.push(ensureInlineClass(inlineStyle));
+			if (inlineStyle) ids.push(ensureInlineClass(inlineStyle, tagName));
 			return { ids, consumed };
 		}
 

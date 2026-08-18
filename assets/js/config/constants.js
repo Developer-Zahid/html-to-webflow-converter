@@ -59,6 +59,40 @@ export const NODE_TYPE_MAP = {
 };
 
 /**
+ * Names for the class generated when an element has inline styles but no class of its own.
+ *
+ * Keyed by tag so the class says what it is - `heading-2-a1b2c3d4` rather than `css-a1b2c3d4` -
+ * which is what a person scanning the Style panel's class list actually needs. The words follow
+ * Webflow's own Navigator labels ("Bold Text", "Text Span", "Block Quote") so the class reads the
+ * same as the element it sits on. An unmapped tag falls back to the tag itself, which is already
+ * a decent name: `figcaption-a1b2c3d4`.
+ */
+export const GENERATED_CLASS_NAMES = {
+	H1: "heading-1",
+	H2: "heading-2",
+	H3: "heading-3",
+	H4: "heading-4",
+	H5: "heading-5",
+	H6: "heading-6",
+	P: "paragraph",
+	A: "link",
+	DIV: "div-block",
+	SPAN: "text-span",
+	UL: "list",
+	OL: "list",
+	LI: "list-item",
+	IMG: "image",
+	STRONG: "bold-text",
+	B: "bold-text",
+	EM: "italic-text",
+	I: "italic-text",
+	BLOCKQUOTE: "block-quote",
+	CODE: "inline-code",
+	SUP: "superscript",
+	SUB: "subscript",
+};
+
+/**
  * Attributes a native Image publishes from `data.attr` - where its Settings panel reads them -
  * rather than from `xattr` like every other native type's non-native attributes.
  */
@@ -360,7 +394,22 @@ export const PANEL_STYLE_PROPERTIES = [
  * Deliberately NOT matched: `linear-gradient()`, `cubic-bezier()`, `sepia()`, `skew()` and
  * friends - those are serialized plain, because the panel's own pickers produce them.
  */
-export const UNREPRESENTABLE_VALUE = /(?:^|[\s(,])(?:calc|var|clamp|min|max|color-mix|env|attr|light-dark)\(/i;
+export const UNREPRESENTABLE_VALUE = /(?:^|[\s(,])(?:calc|var|clamp|min|max|color-mix|env|attr|light-dark|repeat)\(/i;
+
+/**
+ * Properties whose value is a grid TRACK LIST, where `repeat()` is legal syntax.
+ *
+ * Scopes the repeat() expansion in inline-css.js, so the value of any OTHER property that just
+ * happens to contain the text "repeat(" - `content: "repeat("` - is left alone.
+ */
+export const GRID_TRACK_PROPERTIES = ["grid-template-columns", "grid-template-rows", "grid-template", "grid"];
+
+/**
+ * Most tracks a `repeat(N, ...)` is expanded into before the converter gives up and hands the
+ * declaration to Custom properties instead. A grid with more columns than this is pathological,
+ * and the expansion would be an unreadable wall of text in the Style panel either way.
+ */
+export const MAX_REPEAT_EXPANSION = 100;
 
 /**
  * <input type="..."> values Webflow's FormTextInput can represent. Anything outside this list

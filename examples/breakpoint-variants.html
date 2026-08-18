@@ -12,7 +12,14 @@
     - a media query that does not exactly match a breakpoint (max-width: 990px, print,
       (hover: hover), an unsupported pseudo like :first-child) never gets adopted at all
 -->
+<div class="custom-grid"></div>
+
 <style>
+  .custom-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
   /* Base (main) breakpoint - also exercises the 4 adoptable pseudo-states at main. */
   .bp-card-new {
     display: block;
@@ -20,6 +27,7 @@
     background-color: #f3f4f6;
     color: #111827;
     font-size: 1rem;
+    grid-template-columns: repeat(3, 1fr);
   }
   .bp-card-new:hover { color: #1d4ed8; }
   .bp-card-new:active { color: #1e3a8a; }
@@ -86,6 +94,18 @@
     .bp-card-new:first-child { border-top: none; }
   }
 </style>
+
+<details name="faq-group" data-faq="card" class="faq-card">
+  <summary data-faq="toggler" class="faq-card_header u-justify-content-between u-display-flex">
+    <h3 class="faq-card_title u-weight-500">Title goes here 1</h3>
+    <div class="faq-card_arrow u-flex-shrink-0 u-display-grid u-place-items-center">🔽</div>
+  </summary>
+  <div data-faq="body" class="faq-card_body u-overflow-hidden">
+    <div class="faq-card_content">
+      <p class="faq-card_description">Answer goes here 1</p>
+    </div>
+  </div>
+</details>
 
 
 

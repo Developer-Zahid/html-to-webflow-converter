@@ -255,12 +255,18 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 	 * the Designer once lifted (see EMBED_ONLY_PROPERTIES), so those stay behind in a rule of their
 	 * own while the rest of the block still goes native.
 	 *
+	 * @param {string} sourceText  the rule's ORIGINAL text. `rule.style.cssText` is not a reliable
+	 *   record of what the author wrote: a shorthand whose longhands are later overridden cannot be
+	 *   reconstructed, so the CSSOM drops it from the serialization entirely. Combined with pending
+	 *   substitution that silently DELETES the declaration -
+	 *   `background: linear-gradient(…var(--v)…); background-clip: text` comes back as eight empty
+	 *   longhands and no `background` at all. The authored block is the only faithful source.
 	 * @returns {{adopted: boolean, leftover: string|null}} `leftover` is CSS the caller must keep
 	 *   in the embed. Unlike every other leftover this one is PRINTED rather than sliced from the
 	 *   source - the rule is being split, so there is no original text for half of it. Only the
 	 *   declarations are reprinted though, and they are reprinted as the author wrote them.
 	 */
-	const tryAdoptStyleRule = (rule, breakpoint) => {
+	const tryAdoptStyleRule = (rule, breakpoint, sourceText) => {
 		if (rule.type !== CSSRule.STYLE_RULE) return NOT_ADOPTED;
 
 		const parsed = rule.selectorText.split(",").map(parseSelector);
@@ -268,12 +274,14 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 			p && adoptableClasses.has(p.className) && (!p.combo || adoptableCombos.has(`${p.className} ${p.combo}`));
 		if (!parsed.every(usable)) return NOT_ADOPTED;
 
-		const { styleLess, deferred } = expandRuleStyles(rule.style.cssText);
-		if (!styleLess && deferred.length === 0) return NOT_ADOPTED;
+		const authored = openBlock(sourceText)?.body ?? rule.style.cssText;
+		const { styleLess, deferred, entangled } = expandRuleStyles(authored);
 
 		// Everything the panel can hold was deferred, so there is nothing to lift - leave the rule
 		// exactly where it is instead of splitting it into an identical copy of itself.
 		if (!styleLess) return NOT_ADOPTED;
+		// Splitting this one would change what it MEANS - see isEntangled.
+		if (entangled) return NOT_ADOPTED;
 
 		parsed.forEach((p) => addDeclarations(p.className, p.combo, breakpoint, p.state, styleLess));
 		return {
@@ -298,7 +306,7 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 		for (const inner of splitTopLevelSegments(block.body)) {
 			if (inner.isComment) continue;
 			const rule = parseOneRule(inner.text);
-			const result = rule ? tryAdoptStyleRule(rule, breakpoint) : NOT_ADOPTED;
+			const result = rule ? tryAdoptStyleRule(rule, breakpoint, inner.text) : NOT_ADOPTED;
 			if (!result.adopted) {
 				keep.push(inner.text);
 				continue;
@@ -342,7 +350,7 @@ export const collectStylesheets = (styleElements, adoptableClasses, adoptableCom
 				}
 			}
 
-			const result = rule ? tryAdoptStyleRule(rule, BASE_BREAKPOINT) : NOT_ADOPTED;
+			const result = rule ? tryAdoptStyleRule(rule, BASE_BREAKPOINT, segment.text) : NOT_ADOPTED;
 			if (result.adopted) {
 				adoptedAnything = true;
 				if (result.leftover) leftover.push(result.leftover);

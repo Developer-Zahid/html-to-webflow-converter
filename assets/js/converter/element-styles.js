@@ -15,7 +15,7 @@ export const resolveElementStyling = (element, styles) => {
 	// stylesheet combos are keyed by the NORMALIZED name, and the raw token is what goes back
 	// into the passthrough attribute.
 	const others = otherClasses.map((raw) => ({ raw, name: normalizeClassName(raw) }));
-	const { ids, consumed } = styles.resolveClassIds(mainClass, inlineStyle, others);
+	const { ids, consumed } = styles.resolveClassIds(mainClass, inlineStyle, others, element.tagName);
 
 	return {
 		classIds: ids,

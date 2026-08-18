@@ -117,6 +117,15 @@ match. With utility patterns configured it is the first **non-utility** class in
 `class="u-flex card"` is a card wearing a utility, not a "u-flex" component — and an element
 whose classes are *all* utilities gets no style block at all.
 
+An element with inline styles but **no class of its own** gets one generated, named after the
+element: `<h2 style="color:red">` becomes `heading-2-980d0d40`, a `<p>` becomes
+`paragraph-…`, a `<figcaption>` falls back to its own tag (`figcaption-…`). The words follow
+Webflow's Navigator labels (`bold-text`, `text-span`, `block-quote`) so the class reads like the
+thing it is sitting on. The suffix is a hash of the tag plus the CSS, which makes it
+deterministic — re-pasting the same HTML reuses the class instead of piling up duplicates — and
+means elements sharing both a tag and a set of inline styles share one block, while the same
+declarations on a different tag get their own. See `GENERATED_CLASS_NAMES`.
+
 **Combo classes** (`comb: "&"`, chained as `.base.combo`) come from two places:
 
 - **A `.a.b` rule in a `<style>` block** becomes a real combo style block named `b`, and `b` is
@@ -135,6 +144,10 @@ Both live in `converter/style-registry.js`. A `.a.b` rule is only adopted when s
 actually carries both classes — otherwise it would be stripped from the embed and never
 instantiated, losing the rule. Three-class chains (`.a.b.c`) and descendant selectors have no
 equivalent this converter can build and stay in the embed.
+
+**A rule is only adopted if the markup being converted uses its class**, for the same reason: a
+`<style>` pasted on its own produces one Code Embed and no style blocks at all, because there is
+nothing for a style block to attach to. Convert the CSS together with the HTML that uses it.
 
 Elements that would paste as **nothing useful are skipped entirely**, because Webflow has no
 "empty" state for them — they arrive as a real node the user then has to delete: an `<img>` with
@@ -218,6 +231,20 @@ The embed's `<style>` sits in the body, after Webflow's own stylesheet in `<head
 specificity the author's declaration is the one that applies. A rule inside an adopted `@media`
 is re-wrapped in that same query, so it still only applies at its breakpoint.
 
+**A rule is only split when splitting cannot change what it means.** That position in the
+cascade is exactly what makes `background` dangerous to move on its own:
+
+```css
+.gradient-text { background: linear-gradient(…, var(--v), …); background-clip: text; }
+```
+
+Lifting `background-clip: text` into the Style panel and leaving `background` in the embed puts
+the shorthand *after* it — where it resets `background-clip` back to `border-box` and silently
+kills the effect. So when a deferred shorthand shares its property family with anything else in
+the same rule (including a vendor-prefixed sibling like `-webkit-background-clip`), the whole
+rule stays in the embed and the class gets an empty style block. Correct CSS beats a
+half-populated Style panel. See `isEntangled` in `inline-css.js`.
+
 **An inline `style="…"` cannot take that path** — it has no selector, so there is no rule to
 leave the declaration in, and it stays in `styleLess`: rendering and publishing correctly, but
 with no row in the Designer. Rare in practice (it needs a `var()` *inside a shorthand*, in an
@@ -256,6 +283,13 @@ is a Designer action (**Create Component**) or a job for Webflow's component API
   adopted — a `/* medium breakpoint */` left stranded above a rule that moved into the Style
   panel is worse than no comment. If *nothing* is adopted the whole original block is kept,
   comments and all.
+- **`repeat()` is expanded into explicit grid tracks.** Webflow's Grid control cannot read it:
+  `repeat(3, 1fr)` renders three columns on the canvas while the panel reports **1 column, 0
+  rows**, and touching the stepper then overwrites the author's value with that wrong count.
+  `repeat(3, 1fr)` IS `1fr 1fr 1fr`, so expanding it is lossless and gives a fully working
+  panel. The `auto-fill` / `auto-fit` form has no fixed track list and cannot be expanded, so it
+  goes to *Custom properties* instead — visible and editable, with the Grid stepper greyed out
+  rather than misreporting. Over `MAX_REPEAT_EXPANSION` tracks it also falls back.
 - **Unsupported form input types** (`file`, `date`, `range`, `color`, `hidden`) fall back to
   Custom Elements — Webflow has no native field for them.
 - **An external `img` cannot be a native Image.** Publish rewrites the `src` onto Webflow's CDN
